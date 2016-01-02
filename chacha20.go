@@ -12,6 +12,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"runtime"
+	"unsafe"
 )
 
 const (
@@ -344,14 +345,26 @@ func hChaChaRef(x *[stateSize]uint32, out *[32]byte) {
 
 	// HChaCha returns x0...x3 | x12...x15, which corresponds to the
 	// indexes of the ChaCha constant and the indexes of the IV.
-	binary.LittleEndian.PutUint32(out[0:4], x0)
-	binary.LittleEndian.PutUint32(out[4:8], x1)
-	binary.LittleEndian.PutUint32(out[8:12], x2)
-	binary.LittleEndian.PutUint32(out[12:16], x3)
-	binary.LittleEndian.PutUint32(out[16:20], x12)
-	binary.LittleEndian.PutUint32(out[20:24], x13)
-	binary.LittleEndian.PutUint32(out[24:28], x14)
-	binary.LittleEndian.PutUint32(out[28:32], x15)
+	if useUnsafe {
+		outArr := (*[16]uint32)(unsafe.Pointer(&out[0]))
+		outArr[0] = x0
+		outArr[1] = x1
+		outArr[2] = x2
+		outArr[3] = x3
+		outArr[4] = x12
+		outArr[5] = x13
+		outArr[6] = x14
+		outArr[7] = x15
+	} else {
+		binary.LittleEndian.PutUint32(out[0:4], x0)
+		binary.LittleEndian.PutUint32(out[4:8], x1)
+		binary.LittleEndian.PutUint32(out[8:12], x2)
+		binary.LittleEndian.PutUint32(out[12:16], x3)
+		binary.LittleEndian.PutUint32(out[16:20], x12)
+		binary.LittleEndian.PutUint32(out[20:24], x13)
+		binary.LittleEndian.PutUint32(out[24:28], x14)
+		binary.LittleEndian.PutUint32(out[28:32], x15)
+	}
 	return
 }
 
