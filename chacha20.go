@@ -11,6 +11,7 @@ import (
 	"crypto/cipher"
 	"encoding/binary"
 	"errors"
+	"math"
 	"runtime"
 	"unsafe"
 )
@@ -21,6 +22,9 @@ const (
 
 	// NonceSize is the ChaCha20 nonce size in bytes.
 	NonceSize = 8
+
+	// INonceSize is the IETF ChaCha20 nonce size in bytes.
+	INonceSize = 12
 
 	// XNonceSize is the XChaCha20 nonce size in bytes.
 	XNonceSize = 24
@@ -46,7 +50,10 @@ var (
 	ErrInvalidKey = errors.New("key length must be KeySize bytes")
 
 	// ErrInvalidNonce is the error returned when the nonce is invalid.
-	ErrInvalidNonce = errors.New("nonce length must be NonceSize/XNonceSize bytes")
+	ErrInvalidNonce = errors.New("nonce length must be NonceSize/INonceSize/XNonceSize bytes")
+
+	// ErrInvalidCounter is the error returned when the counter is invalid.
+	ErrInvalidCounter = errors.New("block counter is invalid (out of range)")
 
 	useUnsafe    = false
 	usingVectors = false
@@ -58,8 +65,9 @@ var (
 type Cipher struct {
 	state [stateSize]uint32
 
-	buf [BlockSize]byte
-	off int
+	buf  [BlockSize]byte
+	off  int
+	ietf bool
 }
 
 // Reset zeros the key data so that it will no longer appear in the process's
@@ -86,7 +94,7 @@ func (c *Cipher) XORKeyStream(dst, src []byte) {
 			nrBlocks := remaining / BlockSize
 			directBytes := nrBlocks * BlockSize
 			if nrBlocks > 0 {
-				blocksFn(&c.state, src, dst, nrBlocks)
+				blocksFn(&c.state, src, dst, nrBlocks, c.ietf)
 				remaining -= directBytes
 				if remaining == 0 {
 					return
@@ -97,7 +105,7 @@ func (c *Cipher) XORKeyStream(dst, src []byte) {
 
 			// If there's a partial block, generate 1 block of keystream into
 			// the internal buffer.
-			blocksFn(&c.state, nil, c.buf[:], 1)
+			blocksFn(&c.state, nil, c.buf[:], 1, c.ietf)
 			c.off = 0
 		}
 
@@ -127,7 +135,7 @@ func (c *Cipher) KeyStream(dst []byte) {
 			nrBlocks := remaining / BlockSize
 			directBytes := nrBlocks * BlockSize
 			if nrBlocks > 0 {
-				blocksFn(&c.state, nil, dst, nrBlocks)
+				blocksFn(&c.state, nil, dst, nrBlocks, c.ietf)
 				remaining -= directBytes
 				if remaining == 0 {
 					return
@@ -137,7 +145,7 @@ func (c *Cipher) KeyStream(dst []byte) {
 
 			// If there's a partial block, generate 1 block of keystream into
 			// the internal buffer.
-			blocksFn(&c.state, nil, c.buf[:], 1)
+			blocksFn(&c.state, nil, c.buf[:], 1, c.ietf)
 			c.off = 0
 		}
 
@@ -164,6 +172,7 @@ func (c *Cipher) ReKey(key, nonce []byte) error {
 
 	switch len(nonce) {
 	case NonceSize:
+	case INonceSize:
 	case XNonceSize:
 		var subkey [KeySize]byte
 		var subnonce [HNonceSize]byte
@@ -190,12 +199,35 @@ func (c *Cipher) ReKey(key, nonce []byte) error {
 	c.state[6] = binary.LittleEndian.Uint32(key[24:28])
 	c.state[7] = binary.LittleEndian.Uint32(key[28:32])
 	c.state[8] = 0
-	c.state[9] = 0
-	c.state[10] = binary.LittleEndian.Uint32(nonce[0:4])
-	c.state[11] = binary.LittleEndian.Uint32(nonce[4:8])
+	if len(nonce) == INonceSize {
+		c.state[9] = binary.LittleEndian.Uint32(nonce[0:4])
+		c.state[10] = binary.LittleEndian.Uint32(nonce[4:8])
+		c.state[11] = binary.LittleEndian.Uint32(nonce[8:12])
+		c.ietf = true
+	} else {
+		c.state[9] = 0
+		c.state[10] = binary.LittleEndian.Uint32(nonce[0:4])
+		c.state[11] = binary.LittleEndian.Uint32(nonce[4:8])
+		c.ietf = false
+	}
 	c.off = BlockSize
 	return nil
 
+}
+
+// Seek sets the block counter to a given offset.
+func (c *Cipher) Seek(blockCounter uint64) error {
+	if c.ietf {
+		if blockCounter > math.MaxUint32 {
+			return ErrInvalidCounter
+		}
+		c.state[8] = uint32(blockCounter)
+	} else {
+		c.state[8] = uint32(blockCounter)
+		c.state[9] = uint32(blockCounter >> 32)
+	}
+	c.off = BlockSize
+	return nil
 }
 
 // NewCipher returns a new ChaCha20/XChaCha20 instance.

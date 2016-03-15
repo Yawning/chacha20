@@ -6,7 +6,12 @@
 // <http://creativecommons.org/publicdomain/zero/1.0/> for full details.
 
 // +build amd64,!gccgo,!appengine
+
 package chacha20
+
+import (
+	"math"
+)
 
 func blocksAmd64SSE2(sigma, one, x *uint32, in, out *byte, nrBlocks uint)
 
@@ -17,7 +22,15 @@ func blocksAmd64SSE2(sigma, one, x *uint32, in, out *byte, nrBlocks uint)
 var one = [4]uint32{1, 0, 0, 0}
 var sigma = [4]uint32{sigma0, sigma1, sigma2, sigma3}
 
-func blocksAmd64(x *[stateSize]uint32, in []byte, out []byte, nrBlocks int) {
+func blocksAmd64(x *[stateSize]uint32, in []byte, out []byte, nrBlocks int, isIetf bool) {
+	if isIetf {
+		var totalBlocks uint64
+		totalBlocks = uint64(x[8]) + uint64(nrBlocks)
+		if totalBlocks > math.MaxUint32 {
+			panic("chacha20: Exceeded keystream per nonce limit")
+		}
+	}
+
 	if in == nil {
 		for i := range out {
 			out[i] = 0
