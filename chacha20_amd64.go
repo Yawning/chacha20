@@ -13,13 +13,11 @@ import (
 	"math"
 )
 
-func blocksAmd64SSE2(sigma, one, x *uint32, in, out *byte, nrBlocks uint)
+func blocksAmd64SSE2(sigma, x *uint32, in, out *byte, nrBlocks uint)
 
-// One day these won't be parameters when PeachPy fixes issue #11, and they
-// can be made into local data, though leaving them as is isn't horrible
-// since the assembly code doesn't have XMM registers to spare.  Minor gain
-// from being able to ensure they're 16 byte aligned.
-var one = [4]uint32{1, 0, 0, 0}
+// One day this won't be parameters when PeachPy fixes issue #11.  Since the
+// SSE2 code uses all the registers anyway, there isn't a huge gain from
+// chaging this anyway.
 var sigma = [4]uint32{sigma0, sigma1, sigma2, sigma3}
 
 func blocksAmd64(x *[stateSize]uint32, in []byte, out []byte, nrBlocks int, isIetf bool) {
@@ -38,7 +36,7 @@ func blocksAmd64(x *[stateSize]uint32, in []byte, out []byte, nrBlocks int, isIe
 		in = out
 	}
 
-	blocksAmd64SSE2(&sigma[0], &one[0], &x[0], &in[0], &out[0], uint(nrBlocks))
+	blocksAmd64SSE2(&sigma[0], &x[0], &in[0], &out[0], uint(nrBlocks))
 }
 
 func init() {
