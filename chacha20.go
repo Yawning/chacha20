@@ -35,7 +35,7 @@ const (
 	// BlockSize is the ChaCha20 block size in bytes.
 	BlockSize = 64
 
-	stateSize    = 16 - 4
+	stateSize    = 16
 	chachaRounds = 20
 
 	// The constant "expand 32-byte k" as little endian uint32s.
@@ -190,24 +190,28 @@ func (c *Cipher) ReKey(key, nonce []byte) error {
 	}
 
 	c.Reset()
-	c.state[0] = binary.LittleEndian.Uint32(key[0:4])
-	c.state[1] = binary.LittleEndian.Uint32(key[4:8])
-	c.state[2] = binary.LittleEndian.Uint32(key[8:12])
-	c.state[3] = binary.LittleEndian.Uint32(key[12:16])
-	c.state[4] = binary.LittleEndian.Uint32(key[16:20])
-	c.state[5] = binary.LittleEndian.Uint32(key[20:24])
-	c.state[6] = binary.LittleEndian.Uint32(key[24:28])
-	c.state[7] = binary.LittleEndian.Uint32(key[28:32])
-	c.state[8] = 0
+	c.state[0] = sigma0
+	c.state[1] = sigma1
+	c.state[2] = sigma2
+	c.state[3] = sigma3
+	c.state[4] = binary.LittleEndian.Uint32(key[0:4])
+	c.state[5] = binary.LittleEndian.Uint32(key[4:8])
+	c.state[6] = binary.LittleEndian.Uint32(key[8:12])
+	c.state[7] = binary.LittleEndian.Uint32(key[12:16])
+	c.state[8] = binary.LittleEndian.Uint32(key[16:20])
+	c.state[9] = binary.LittleEndian.Uint32(key[20:24])
+	c.state[10] = binary.LittleEndian.Uint32(key[24:28])
+	c.state[11] = binary.LittleEndian.Uint32(key[28:32])
+	c.state[12] = 0
 	if len(nonce) == INonceSize {
-		c.state[9] = binary.LittleEndian.Uint32(nonce[0:4])
-		c.state[10] = binary.LittleEndian.Uint32(nonce[4:8])
-		c.state[11] = binary.LittleEndian.Uint32(nonce[8:12])
+		c.state[13] = binary.LittleEndian.Uint32(nonce[0:4])
+		c.state[14] = binary.LittleEndian.Uint32(nonce[4:8])
+		c.state[15] = binary.LittleEndian.Uint32(nonce[8:12])
 		c.ietf = true
 	} else {
-		c.state[9] = 0
-		c.state[10] = binary.LittleEndian.Uint32(nonce[0:4])
-		c.state[11] = binary.LittleEndian.Uint32(nonce[4:8])
+		c.state[13] = 0
+		c.state[14] = binary.LittleEndian.Uint32(nonce[0:4])
+		c.state[15] = binary.LittleEndian.Uint32(nonce[4:8])
 		c.ietf = false
 	}
 	c.off = BlockSize
@@ -221,10 +225,10 @@ func (c *Cipher) Seek(blockCounter uint64) error {
 		if blockCounter > math.MaxUint32 {
 			return ErrInvalidCounter
 		}
-		c.state[8] = uint32(blockCounter)
+		c.state[12] = uint32(blockCounter)
 	} else {
-		c.state[8] = uint32(blockCounter)
-		c.state[9] = uint32(blockCounter >> 32)
+		c.state[12] = uint32(blockCounter)
+		c.state[13] = uint32(blockCounter >> 32)
 	}
 	c.off = BlockSize
 	return nil
@@ -241,7 +245,7 @@ func NewCipher(key, nonce []byte) (*Cipher, error) {
 
 // HChaCha is the HChaCha20 hash function used to make XChaCha.
 func HChaCha(key []byte, nonce *[HNonceSize]byte, out *[32]byte) {
-	var x [stateSize]uint32
+	var x [stateSize]uint32 // Last 4 slots unused, sigma hardcoded.
 	x[0] = binary.LittleEndian.Uint32(key[0:4])
 	x[1] = binary.LittleEndian.Uint32(key[4:8])
 	x[2] = binary.LittleEndian.Uint32(key[8:12])

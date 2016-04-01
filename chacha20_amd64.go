@@ -13,12 +13,7 @@ import (
 	"math"
 )
 
-func blocksAmd64SSE2(sigma, x *uint32, in, out *byte, nrBlocks uint)
-
-// One day this won't be parameters when PeachPy fixes issue #11.  Since the
-// SSE2 code uses all the registers anyway, there isn't a huge gain from
-// chaging this anyway.
-var sigma = [4]uint32{sigma0, sigma1, sigma2, sigma3}
+func blocksAmd64SSE2(x *uint32, in, out *byte, nrBlocks uint)
 
 func blocksAmd64(x *[stateSize]uint32, in []byte, out []byte, nrBlocks int, isIetf bool) {
 	if isIetf {
@@ -36,7 +31,7 @@ func blocksAmd64(x *[stateSize]uint32, in []byte, out []byte, nrBlocks int, isIe
 		in = out
 	}
 
-	blocksAmd64SSE2(&sigma[0], &x[0], &in[0], &out[0], uint(nrBlocks))
+	blocksAmd64SSE2(&x[0], &in[0], &out[0], uint(nrBlocks))
 }
 
 func init() {

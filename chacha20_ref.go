@@ -22,9 +22,12 @@ func blocksRef(x *[stateSize]uint32, in []byte, out []byte, nrBlocks int, isIetf
 		}
 	}
 
+	// This routine ignores x[0]...x[4] in favor the const values since it's
+	// ever so slightly faster.
+
 	for n := 0; n < nrBlocks; n++ {
 		x0, x1, x2, x3 := sigma0, sigma1, sigma2, sigma3
-		x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15 := x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7], x[8], x[9], x[10], x[11]
+		x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15 := x[4], x[5], x[6], x[7], x[8], x[9], x[10], x[11], x[12], x[13], x[14], x[15]
 
 		for i := chachaRounds; i > 0; i -= 2 {
 			// quarterround(x, 0, 4, 8, 12)
@@ -149,56 +152,60 @@ func blocksRef(x *[stateSize]uint32, in []byte, out []byte, nrBlocks int, isIetf
 				outArr[1] = inArr[1] ^ (x1 + sigma1)
 				outArr[2] = inArr[2] ^ (x2 + sigma2)
 				outArr[3] = inArr[3] ^ (x3 + sigma3)
-				outArr[4] = inArr[4] ^ (x4 + x[0])
-				outArr[5] = inArr[5] ^ (x5 + x[1])
-				outArr[6] = inArr[6] ^ (x6 + x[2])
-				outArr[7] = inArr[7] ^ (x7 + x[3])
-				outArr[8] = inArr[8] ^ (x8 + x[4])
-				outArr[9] = inArr[9] ^ (x9 + x[5])
-				outArr[10] = inArr[10] ^ (x10 + x[6])
-				outArr[11] = inArr[11] ^ (x11 + x[7])
-				outArr[12] = inArr[12] ^ (x12 + x[8])
-				outArr[13] = inArr[13] ^ (x13 + x[9])
-				outArr[14] = inArr[14] ^ (x14 + x[10])
-				outArr[15] = inArr[15] ^ (x15 + x[11])
+				outArr[4] = inArr[4] ^ (x4 + x[4])
+				outArr[5] = inArr[5] ^ (x5 + x[5])
+				outArr[6] = inArr[6] ^ (x6 + x[6])
+				outArr[7] = inArr[7] ^ (x7 + x[7])
+				outArr[8] = inArr[8] ^ (x8 + x[8])
+				outArr[9] = inArr[9] ^ (x9 + x[9])
+				outArr[10] = inArr[10] ^ (x10 + x[10])
+				outArr[11] = inArr[11] ^ (x11 + x[11])
+				outArr[12] = inArr[12] ^ (x12 + x[12])
+				outArr[13] = inArr[13] ^ (x13 + x[13])
+				outArr[14] = inArr[14] ^ (x14 + x[14])
+				outArr[15] = inArr[15] ^ (x15 + x[15])
 			} else {
 				outArr := (*[16]uint32)(unsafe.Pointer(&out[n*BlockSize]))
 				outArr[0] = x0 + sigma0
 				outArr[1] = x1 + sigma1
 				outArr[2] = x2 + sigma2
 				outArr[3] = x3 + sigma3
-				outArr[4] = x4 + x[0]
-				outArr[5] = x5 + x[1]
-				outArr[6] = x6 + x[2]
-				outArr[7] = x7 + x[3]
-				outArr[8] = x8 + x[4]
-				outArr[9] = x9 + x[5]
-				outArr[10] = x10 + x[6]
-				outArr[11] = x11 + x[7]
-				outArr[12] = x12 + x[8]
-				outArr[13] = x13 + x[9]
-				outArr[14] = x14 + x[10]
-				outArr[15] = x15 + x[11]
+				outArr[4] = x4 + x[4]
+				outArr[5] = x5 + x[5]
+				outArr[6] = x6 + x[6]
+				outArr[7] = x7 + x[7]
+				outArr[8] = x8 + x[8]
+				outArr[9] = x9 + x[9]
+				outArr[10] = x10 + x[10]
+				outArr[11] = x11 + x[11]
+				outArr[12] = x12 + x[12]
+				outArr[13] = x13 + x[13]
+				outArr[14] = x14 + x[14]
+				outArr[15] = x15 + x[15]
 			}
 		} else {
-			// Slow path, either the architecture cares about alignment, or is not litte endian.
-			x4 += x[0]
-			x5 += x[1]
-			x6 += x[2]
-			x7 += x[3]
-			x8 += x[4]
-			x9 += x[5]
-			x10 += x[6]
-			x11 += x[7]
-			x12 += x[8]
-			x13 += x[9]
-			x14 += x[10]
-			x15 += x[11]
+			// Slow path, either the architecture cares about alignment, or is not litt;e endian.
+			x0 += sigma0
+			x1 += sigma1
+			x2 += sigma2
+			x3 += sigma3
+			x4 += x[4]
+			x5 += x[5]
+			x6 += x[6]
+			x7 += x[7]
+			x8 += x[8]
+			x9 += x[9]
+			x10 += x[10]
+			x11 += x[11]
+			x12 += x[12]
+			x13 += x[13]
+			x14 += x[14]
+			x15 += x[15]
 			if in != nil {
-				binary.LittleEndian.PutUint32(out[0:4], binary.LittleEndian.Uint32(in[0:4])^(x0+sigma0))
-				binary.LittleEndian.PutUint32(out[4:8], binary.LittleEndian.Uint32(in[4:8])^(x1+sigma1))
-				binary.LittleEndian.PutUint32(out[8:12], binary.LittleEndian.Uint32(in[8:12])^(x2+sigma2))
-				binary.LittleEndian.PutUint32(out[12:16], binary.LittleEndian.Uint32(in[12:16])^(x3+sigma3))
+				binary.LittleEndian.PutUint32(out[0:4], binary.LittleEndian.Uint32(in[0:4])^x0)
+				binary.LittleEndian.PutUint32(out[4:8], binary.LittleEndian.Uint32(in[4:8])^x1)
+				binary.LittleEndian.PutUint32(out[8:12], binary.LittleEndian.Uint32(in[8:12])^x2)
+				binary.LittleEndian.PutUint32(out[12:16], binary.LittleEndian.Uint32(in[12:16])^x3)
 				binary.LittleEndian.PutUint32(out[16:20], binary.LittleEndian.Uint32(in[16:20])^x4)
 				binary.LittleEndian.PutUint32(out[20:24], binary.LittleEndian.Uint32(in[20:24])^x5)
 				binary.LittleEndian.PutUint32(out[24:28], binary.LittleEndian.Uint32(in[24:28])^x6)
@@ -213,10 +220,10 @@ func blocksRef(x *[stateSize]uint32, in []byte, out []byte, nrBlocks int, isIetf
 				binary.LittleEndian.PutUint32(out[60:64], binary.LittleEndian.Uint32(in[60:64])^x15)
 				in = in[BlockSize:]
 			} else {
-				binary.LittleEndian.PutUint32(out[0:4], x0+sigma0)
-				binary.LittleEndian.PutUint32(out[4:8], x1+sigma1)
-				binary.LittleEndian.PutUint32(out[8:12], x2+sigma2)
-				binary.LittleEndian.PutUint32(out[12:16], x3+sigma3)
+				binary.LittleEndian.PutUint32(out[0:4], x0)
+				binary.LittleEndian.PutUint32(out[4:8], x1)
+				binary.LittleEndian.PutUint32(out[8:12], x2)
+				binary.LittleEndian.PutUint32(out[12:16], x3)
 				binary.LittleEndian.PutUint32(out[16:20], x4)
 				binary.LittleEndian.PutUint32(out[20:24], x5)
 				binary.LittleEndian.PutUint32(out[24:28], x6)
@@ -234,9 +241,9 @@ func blocksRef(x *[stateSize]uint32, in []byte, out []byte, nrBlocks int, isIetf
 		}
 
 		// Stoping at 2^70 bytes per nonce is the user's responsibility.
-		ctr := uint64(x[9])<<32 | uint64(x[8])
+		ctr := uint64(x[13])<<32 | uint64(x[12])
 		ctr++
-		x[8] = uint32(ctr)
-		x[9] = uint32(ctr >> 32)
+		x[12] = uint32(ctr)
+		x[13] = uint32(ctr >> 32)
 	}
 }

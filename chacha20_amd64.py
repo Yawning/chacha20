@@ -26,7 +26,6 @@
 from peachpy import *
 from peachpy.x86_64 import *
 
-sigma = Argument(ptr(const_uint32_t))
 x = Argument(ptr(uint32_t))
 inp = Argument(ptr(const_uint8_t))
 outp = Argument(ptr(uint8_t))
@@ -130,19 +129,18 @@ def WriteXor(tmp, inp, outp, d, v0, v1, v2, v3):
     PXOR(tmp, v3)
     MOVDQU([outp+d+48], tmp)
 
-with Function("blocksAmd64SSE2", (sigma, x, inp, outp, nrBlocks)):
-    reg_sigma = GeneralPurposeRegister64()
+with Function("blocksAmd64SSE2", (x, inp, outp, nrBlocks)):
     reg_x = GeneralPurposeRegister64()
     reg_inp = GeneralPurposeRegister64()
     reg_outp = GeneralPurposeRegister64()
     reg_blocks = GeneralPurposeRegister64()
 
-    LOAD.ARGUMENT(reg_sigma, sigma)
     LOAD.ARGUMENT(reg_x, x)
     LOAD.ARGUMENT(reg_inp, inp)
     LOAD.ARGUMENT(reg_outp, outp)
     LOAD.ARGUMENT(reg_blocks, nrBlocks)
 
+    # Build the counter increment vector on the stack.
     SUB(registers.rsp, 16)
     reg_tmp = GeneralPurposeRegister32()
     MOV(reg_tmp, 0x00000001)
@@ -154,11 +152,11 @@ with Function("blocksAmd64SSE2", (sigma, x, inp, outp, nrBlocks)):
 
     xmm_tmp = XMMRegister()
     xmm_s1 = XMMRegister()
-    MOVDQU(xmm_s1, [reg_x])
+    MOVDQU(xmm_s1, [reg_x+16])
     xmm_s2 = XMMRegister()
-    MOVDQU(xmm_s2, [reg_x+16])
+    MOVDQU(xmm_s2, [reg_x+32])
     xmm_s3 = XMMRegister()
-    MOVDQU(xmm_s3, [reg_x+32])
+    MOVDQU(xmm_s3, [reg_x+48])
 
     vector_loop = Loop()
     serial_loop = Loop()
@@ -181,7 +179,7 @@ with Function("blocksAmd64SSE2", (sigma, x, inp, outp, nrBlocks)):
     SUB(reg_blocks, 3)
     JB(vector_loop.end)
     with vector_loop:
-        MOVDQU(xmm_v0, [reg_sigma])
+        MOVDQU(xmm_v0, [reg_x]) # <- sigma
         MOVDQA(xmm_v1, xmm_s1)
         MOVDQA(xmm_v2, xmm_s2)
         MOVDQA(xmm_v3, xmm_s3)
@@ -209,7 +207,7 @@ with Function("blocksAmd64SSE2", (sigma, x, inp, outp, nrBlocks)):
             SUB(reg_rounds, 2)
             JNZ(rounds_loop.begin)
 
-        PADDD(xmm_v0, [reg_sigma])
+        PADDD(xmm_v0, [reg_x])
         PADDD(xmm_v1, xmm_s1)
         PADDD(xmm_v2, xmm_s2)
         PADDD(xmm_v3, xmm_s3)
@@ -217,14 +215,14 @@ with Function("blocksAmd64SSE2", (sigma, x, inp, outp, nrBlocks)):
         MOVDQU(xmm_v0, [registers.rsp])
         PADDQ(xmm_s3, xmm_v0) # + counter
 
-        PADDD(xmm_v4, [reg_sigma])
+        PADDD(xmm_v4, [reg_x])
         PADDD(xmm_v5, xmm_s1)
         PADDD(xmm_v6, xmm_s2)
         PADDD(xmm_v7, xmm_s3)
         WriteXor(xmm_tmp, reg_inp, reg_outp, 64, xmm_v4, xmm_v5, xmm_v6, xmm_v7)
         PADDQ(xmm_s3, xmm_v0) # +counter
 
-        PADDD(xmm_v8, [reg_sigma])
+        PADDD(xmm_v8, [reg_x])
         PADDD(xmm_v9, xmm_s1)
         PADDD(xmm_v10, xmm_s2)
         PADDD(xmm_v11, xmm_s3)
@@ -244,7 +242,7 @@ with Function("blocksAmd64SSE2", (sigma, x, inp, outp, nrBlocks)):
     #    xmm_v4 = 1, 0, 0, 0
     #    xmm_v5 = sigma
     MOVDQU(xmm_v4, [registers.rsp])
-    MOVDQU(xmm_v5, [reg_sigma])
+    MOVDQU(xmm_v5, [reg_x])
     with serial_loop:
         MOVDQA(xmm_v0, xmm_v5)
         MOVDQA(xmm_v1, xmm_s1)
@@ -274,7 +272,7 @@ with Function("blocksAmd64SSE2", (sigma, x, inp, outp, nrBlocks)):
 
     # Write back the updated counter.  Stoping at 2^70 bytes is the user's
     # problem, not mine.
-    MOVDQU([reg_x+32], xmm_s3)
+    MOVDQU([reg_x+48], xmm_s3)
 
     ADD(registers.rsp, 16)
 
