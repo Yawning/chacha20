@@ -6,17 +6,13 @@
 # <http://creativecommons.org/publicdomain/zero/1.0/> for full details.
 
 #
-# Ok.  The first revision of this code started off as a cgo version of Ted
-# Krovetz's vec128 ChaCha20 implementation, but cgo sucks because it carves
-# off a separate stack (needed, but expensive), and worse, can allocate an OS
-# thread because it treats all cgo invocations as system calls.
+# cgo sucks.  Plan 9 assembly sucks.  Real languages have SIMD intrinsics.
+# The least terrible/retarded option is to use a Python code generator, so
+# that's what I did.
 #
-# For something like a low level cryptography routine, both of these behaviors
-# are just unneccecary overhead, and the latter is totally fucking retarded.
-#
-# Since Golang doesn't have SIMD intrinsics, this means, that it's either
-# "learn plan 9 assembly", or resort to more extreme measures like using a
-# python code generator.  This obviously goes for the latter.
+# Code based on Ted Krovetz's vec128 C implementation, with corrections
+# to use a 64 bit counter instead of 32 bit, and to allow unaligned input and
+# output pointers.
 #
 # Dependencies: https://github.com/Maratyszcza/PeachPy
 #
@@ -31,99 +27,82 @@ inp = Argument(ptr(const_uint8_t))
 outp = Argument(ptr(uint8_t))
 nrBlocks = Argument(ptr(size_t))
 
-# Helper routines for the actual ChaCha round function.
-#
-# Note:
-#   It's been pointed out by the PeachPy author that the tmp variable for a
-#   scratch register is kind of silly, but I only have one XMM register that
-#   can be used for scratch (everything else is used to store the cipher state
-#   or output).
-
-def RotV1(x):
-    PSHUFD(x, x, 0x39)
-
-def RotV2(x):
-    PSHUFD(x, x, 0x4e)
-
-def RotV3(x):
-    PSHUFD(x, x, 0x93)
-
-def RotW7(tmp, x):
-    MOVDQA(tmp, x)
-    PSLLD(tmp, 7)
-    PSRLD(x, 25)
-    PXOR(x, tmp)
-
-def RotW8(tmp, x):
-    MOVDQA(tmp, x)
-    PSLLD(tmp, 8)
-    PSRLD(x, 24)
-    PXOR(x, tmp)
-
-def RotW12(tmp, x):
-    MOVDQA(tmp, x)
-    PSLLD(tmp, 12)
-    PSRLD(x, 20)
-    PXOR(x, tmp)
-
-def RotW16(tmp, x):
-    MOVDQA(tmp, x)
-    PSLLD(tmp, 16)
-    PSRLD(x, 16)
-    PXOR(x, tmp)
-
-def DQRoundVectors(tmp, a, b, c, d):
+def DQRoundVectors_sse2(tmp, a, b, c, d):
     # a += b; d ^= a; d = ROTW16(d);
     PADDD(a, b)
     PXOR(d, a)
-    RotW16(tmp, d)
+    MOVDQA(tmp, d)
+    PSLLD(tmp, 16)
+    PSRLD(d, 16)
+    PXOR(d, tmp)
 
     # c += d; b ^= c; b = ROTW12(b);
     PADDD(c, d)
     PXOR(b, c)
-    RotW12(tmp, b)
+    MOVDQA(tmp, b)
+    PSLLD(tmp, 12)
+    PSRLD(b, 20)
+    PXOR(b, tmp)
 
     # a += b; d ^= a; d = ROTW8(d);
     PADDD(a, b)
     PXOR(d, a)
-    RotW8(tmp, d)
+    MOVDQA(tmp, d)
+    PSLLD(tmp, 8)
+    PSRLD(d, 24)
+    PXOR(d, tmp)
 
     # c += d; b ^= c; b = ROTW7(b)
     PADDD(c, d)
     PXOR(b, c)
-    RotW7(tmp, b)
+    MOVDQA(tmp, b)
+    PSLLD(tmp, 7)
+    PSRLD(b, 25)
+    PXOR(b, tmp)
 
     # b = ROTV1(b); c = ROTV2(c);  d = ROTV3(d);
-    RotV1(b)
-    RotV2(c)
-    RotV3(d)
+    PSHUFD(b, b, 0x39)
+    PSHUFD(c, c, 0x4e)
+    PSHUFD(d, d, 0x93)
 
     # a += b; d ^= a; d = ROTW16(d);
     PADDD(a, b)
     PXOR(d, a)
-    RotW16(tmp, d)
+    MOVDQA(tmp, d)
+    PSLLD(tmp, 16)
+    PSRLD(d, 16)
+    PXOR(d, tmp)
 
     # c += d; b ^= c; b = ROTW12(b);
     PADDD(c, d)
     PXOR(b, c)
-    RotW12(tmp, b)
+    MOVDQA(tmp, b)
+    PSLLD(tmp, 12)
+    PSRLD(b, 20)
+    PXOR(b, tmp)
 
     # a += b; d ^= a; d = ROTW8(d);
     PADDD(a, b)
     PXOR(d, a)
-    RotW8(tmp, d)
+    MOVDQA(tmp, d)
+    PSLLD(tmp, 8)
+    PSRLD(d, 24)
+    PXOR(d, tmp)
 
     # c += d; b ^= c; b = ROTW7(b);
     PADDD(c, d)
     PXOR(b, c)
-    RotW7(tmp, b)
+    MOVDQA(tmp, b)
+    PSLLD(tmp, 7)
+    PSRLD(b, 25)
+    PXOR(b, tmp)
 
     # b = ROTV3(b); c = ROTV2(c); d = ROTV1(d);
-    RotV3(b)
-    RotV2(c)
-    RotV1(d)
+    PSHUFD(b, b, 0x93)
+    PSHUFD(c, c, 0x4e)
+    PSHUFD(d, d, 0x39)
 
-def WriteXor(tmp, inp, outp, d, v0, v1, v2, v3):
+def WriteXor_sse2(tmp, inp, outp, d, v0, v1, v2, v3):
     MOVDQU(tmp, [inp+d])
     PXOR(tmp, v0)
     MOVDQU([outp+d], tmp)
@@ -137,8 +116,8 @@ def WriteXor(tmp, inp, outp, d, v0, v1, v2, v3):
     PXOR(tmp, v3)
     MOVDQU([outp+d+48], tmp)
 
-# SSE2 ChaCha20.  Does not handle partial blocks, and will process 3 blocks at
-# a time.  x (the ChaCha20 state) must be 16 byte aligned.
+# SSE2 ChaCha20 (aka vec128).  Does not handle partial blocks, and will
+# process 3 blocks at a time.  x (the ChaCha20 state) must be 16 byte aligned.
 with Function("blocksAmd64SSE2", (x, inp, outp, nrBlocks)):
     reg_x = GeneralPurposeRegister64()
     reg_inp = GeneralPurposeRegister64()
@@ -221,9 +200,9 @@ with Function("blocksAmd64SSE2", (x, inp, outp, nrBlocks)):
         MOV(reg_rounds, 20)
         rounds_loop = Loop()
         with rounds_loop:
-            DQRoundVectors(xmm_tmp, xmm_v0, xmm_v1, xmm_v2, xmm_v3)
-            DQRoundVectors(xmm_tmp, xmm_v4, xmm_v5, xmm_v6, xmm_v7)
-            DQRoundVectors(xmm_tmp, xmm_v8, xmm_v9, xmm_v10, xmm_v11)
+            DQRoundVectors_sse2(xmm_tmp, xmm_v0, xmm_v1, xmm_v2, xmm_v3)
+            DQRoundVectors_sse2(xmm_tmp, xmm_v4, xmm_v5, xmm_v6, xmm_v7)
+            DQRoundVectors_sse2(xmm_tmp, xmm_v8, xmm_v9, xmm_v10, xmm_v11)
             SUB(reg_rounds, 2)
             JNZ(rounds_loop.begin)
 
@@ -231,21 +210,21 @@ with Function("blocksAmd64SSE2", (x, inp, outp, nrBlocks)):
         PADDD(xmm_v1, xmm_s1)
         PADDD(xmm_v2, xmm_s2)
         PADDD(xmm_v3, xmm_s3)
-        WriteXor(xmm_tmp, reg_inp, reg_outp, 0, xmm_v0, xmm_v1, xmm_v2, xmm_v3)
+        WriteXor_sse2(xmm_tmp, reg_inp, reg_outp, 0, xmm_v0, xmm_v1, xmm_v2, xmm_v3)
         PADDQ(xmm_s3, mem_one)
 
         PADDD(xmm_v4, mem_s0)
         PADDD(xmm_v5, xmm_s1)
         PADDD(xmm_v6, xmm_s2)
         PADDD(xmm_v7, xmm_s3)
-        WriteXor(xmm_tmp, reg_inp, reg_outp, 64, xmm_v4, xmm_v5, xmm_v6, xmm_v7)
+        WriteXor_sse2(xmm_tmp, reg_inp, reg_outp, 64, xmm_v4, xmm_v5, xmm_v6, xmm_v7)
         PADDQ(xmm_s3, mem_one)
 
         PADDD(xmm_v8, mem_s0)
         PADDD(xmm_v9, xmm_s1)
         PADDD(xmm_v10, xmm_s2)
         PADDD(xmm_v11, xmm_s3)
-        WriteXor(xmm_tmp, reg_inp, reg_outp, 128, xmm_v8, xmm_v9, xmm_v10, xmm_v11)
+        WriteXor_sse2(xmm_tmp, reg_inp, reg_outp, 128, xmm_v8, xmm_v9, xmm_v10, xmm_v11)
         PADDQ(xmm_s3, mem_one)
 
         ADD(reg_inp, 192)
@@ -273,7 +252,7 @@ with Function("blocksAmd64SSE2", (x, inp, outp, nrBlocks)):
         MOV(reg_rounds, 20)
         rounds_loop = Loop()
         with rounds_loop:
-            DQRoundVectors(xmm_tmp, xmm_v0, xmm_v1, xmm_v2, xmm_v3)
+            DQRoundVectors_sse2(xmm_tmp, xmm_v0, xmm_v1, xmm_v2, xmm_v3)
             SUB(reg_rounds, 2)
             JNZ(rounds_loop.begin)
 
@@ -281,7 +260,7 @@ with Function("blocksAmd64SSE2", (x, inp, outp, nrBlocks)):
         PADDD(xmm_v1, xmm_s1)
         PADDD(xmm_v2, xmm_s2)
         PADDD(xmm_v3, xmm_s3)
-        WriteXor(xmm_tmp, reg_inp, reg_outp, 0, xmm_v0, xmm_v1, xmm_v2, xmm_v3)
+        WriteXor_sse2(xmm_tmp, reg_inp, reg_outp, 0, xmm_v0, xmm_v1, xmm_v2, xmm_v3)
         PADDQ(xmm_s3, xmm_one)
 
         ADD(reg_inp, 64)
