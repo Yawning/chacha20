@@ -7,6 +7,11 @@ TEXT ·blocksAmd64SSE2(SB),4,$0-32
 	MOVQ inp+8(FP), BX
 	MOVQ outp+16(FP), CX
 	MOVQ nrBlocks+24(FP), DX
+	MOVQ SP, DI
+	ANDQ $15, DI
+	MOVQ $16, SI
+	SUBQ DI, SI
+	SUBQ SI, SP
 	SUBQ $16, SP
 	MOVL $1, DI
 	MOVL DI, 0(SP)
@@ -14,27 +19,26 @@ TEXT ·blocksAmd64SSE2(SB),4,$0-32
 	MOVL DI, 4(SP)
 	MOVL DI, 8(SP)
 	MOVL DI, 12(SP)
-	MOVOU 16(AX), X1
-	MOVOU 32(AX), X2
-	MOVOU 48(AX), X3
+	MOVO 16(AX), X1
+	MOVO 32(AX), X2
+	MOVO 48(AX), X3
 	SUBQ $3, DX
 	JCS vector_loop_end
 vector_loop_begin:
-		MOVOU 0(AX), X4
+		MOVO 0(AX), X4
 		MOVO X1, X5
 		MOVO X2, X6
 		MOVO X3, X7
-		MOVOU 0(SP), X0
-		MOVO X4, X8
+		MOVO 0(AX), X8
 		MOVO X1, X9
 		MOVO X2, X10
 		MOVO X3, X11
-		PADDQ X0, X11
-		MOVO X4, X12
+		PADDQ 0(SP), X11
+		MOVO 0(AX), X12
 		MOVO X1, X13
 		MOVO X2, X14
 		MOVO X11, X15
-		PADDQ X0, X15
+		PADDQ 0(SP), X15
 		MOVQ $20, DI
 rounds_loop0_begin:
 			PADDL X5, X4
@@ -217,8 +221,7 @@ rounds_loop0_begin:
 		MOVOU 48(BX), X0
 		PXOR X7, X0
 		MOVOU X0, 48(CX)
-		MOVOU 0(SP), X4
-		PADDQ X4, X3
+		PADDQ 0(SP), X3
 		PADDL 0(AX), X8
 		PADDL X1, X9
 		PADDL X2, X10
@@ -235,7 +238,7 @@ rounds_loop0_begin:
 		MOVOU 112(BX), X0
 		PXOR X11, X0
 		MOVOU X0, 112(CX)
-		PADDQ X4, X3
+		PADDQ 0(SP), X3
 		PADDL 0(AX), X12
 		PADDL X1, X13
 		PADDL X2, X14
@@ -252,7 +255,7 @@ rounds_loop0_begin:
 		MOVOU 176(BX), X0
 		PXOR X15, X0
 		MOVOU X0, 176(CX)
-		PADDQ X4, X3
+		PADDQ 0(SP), X3
 		ADDQ $192, BX
 		ADDQ $192, CX
 		SUBQ $3, DX
@@ -260,10 +263,10 @@ rounds_loop0_begin:
 vector_loop_end:
 	ADDQ $3, DX
 	JEQ serial_loop_end
-	MOVOU 0(SP), X8
-	MOVOU 0(AX), X9
+	MOVO 0(AX), X8
+	MOVO 0(SP), X9
 serial_loop_begin:
-		MOVO X9, X4
+		MOVO X8, X4
 		MOVO X1, X5
 		MOVO X2, X6
 		MOVO X3, X7
@@ -325,7 +328,7 @@ rounds_loop1_begin:
 			PSHUFL $57, X7, X7
 			SUBQ $2, DI
 			JNE rounds_loop1_begin
-		PADDL X9, X4
+		PADDL X8, X4
 		PADDL X1, X5
 		PADDL X2, X6
 		PADDL X3, X7
@@ -341,12 +344,13 @@ rounds_loop1_begin:
 		MOVOU 48(BX), X0
 		PXOR X7, X0
 		MOVOU X0, 48(CX)
-		PADDQ X8, X3
+		PADDQ X9, X3
 		ADDQ $64, BX
 		ADDQ $64, CX
 		SUBQ $1, DX
 		JNE serial_loop_begin
 serial_loop_end:
-	MOVOU X3, 48(AX)
+	MOVO X3, 48(AX)
 	ADDQ $16, SP
+	ADDQ SI, SP
 	RET
