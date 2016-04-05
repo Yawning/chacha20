@@ -598,7 +598,7 @@ with Function("blocksAmd64SSE2", (x, inp, outp, nrBlocks)):
     LABEL(out)
 
     # Paranoia, cleanse the scratch space.
-    MOVDQA(xmm_v0, mem_one)
+    PXOR(xmm_v0, xmm_v0)
     MOVDQA(mem_tmp0, xmm_v0)
 
     ADD(registers.rsp, 16+16)

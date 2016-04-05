@@ -439,7 +439,7 @@ rounds_loop0_begin:
 		JNE serial_loop_begin
 	MOVO X7, 48(AX)
 out:
-	MOVO 0(SP), X0
+	PXOR X0, X0
 	MOVO X0, 16(SP)
 	ADDQ $32, SP
 	ADDQ SI, SP
