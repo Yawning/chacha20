@@ -10,6 +10,7 @@ package chacha20
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/hex"
 	"testing"
 )
 
@@ -346,10 +347,12 @@ func TestChaCha20Vectorized(t *testing.T) {
 		blocksFn = oldBlocksFn
 	}()
 
+	const testSz = BlockSize*256 + 1 // Force both parallel and serial.
+
 	// Generate a random key, nonce and input.
 	var key [KeySize]byte
 	var nonce [NonceSize]byte
-	var input [1024 * 1024]byte
+	var input [testSz]byte
 	rand.Read(key[:])
 	rand.Read(nonce[:])
 	rand.Read(input[:])
@@ -359,23 +362,25 @@ func TestChaCha20Vectorized(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var vecOut [1024 * 1024]byte
+	var vecOut [testSz]byte
 	c.XORKeyStream(vecOut[:], input[:])
 
 	c, err = NewCipher(key[:], nonce[:])
 	if err != nil {
 		t.Fatal(err)
 	}
-	var refOut [1024 * 1024]byte
+	var refOut [testSz]byte
 	blocksFn = blocksRef
 	c.XORKeyStream(refOut[:], input[:])
 	if !bytes.Equal(refOut[:], vecOut[:]) {
 		for i, v := range refOut {
 			if vecOut[i] != v {
-				t.Errorf("mismatch at offset: %d", i)
+				t.Errorf("mismatch at offset: %d %x != %x", i, vecOut[i], v)
 				break
 			}
 		}
+		t.Errorf("ref: %s", hex.Dump(refOut[:]))
+		t.Errorf("vec: %s", hex.Dump(vecOut[:]))
 		t.Errorf("refOut != vecOut")
 	}
 }
