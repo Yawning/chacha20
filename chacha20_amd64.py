@@ -27,6 +27,40 @@ inp = Argument(ptr(const_uint8_t))
 outp = Argument(ptr(uint8_t))
 nrBlocks = Argument(ptr(size_t))
 
+#
+# SSE2 helper functions.  A temporary register is explicitly passed in because
+# the main fast loop uses every single register (and even spills) so manual
+# control is needed.
+#
+# This used to also have a DQROUNDS helper that did 2 rounds of ChaCha like
+# in the C code, but the C code has the luxury of an optimizer reordering
+# everything, while this does not.
+#
+
+def ROTW16_sse2(tmp, d):
+    MOVDQA(tmp, d)
+    PSLLD(tmp, 16)
+    PSRLD(d, 16)
+    PXOR(d, tmp)
+
+def ROTW12_sse2(tmp, b):
+    MOVDQA(tmp, b)
+    PSLLD(tmp, 12)
+    PSRLD(b, 20)
+    PXOR(b, tmp)
+
+def ROTW8_sse2(tmp, d):
+    MOVDQA(tmp, d)
+    PSLLD(tmp, 8)
+    PSRLD(d, 24)
+    PXOR(d, tmp)
+
+def ROTW7_sse2(tmp, b):
+    MOVDQA(tmp, b)
+    PSLLD(tmp, 7)
+    PSRLD(b, 25)
+    PXOR(b, tmp)
+
 def WriteXor_sse2(tmp, inp, outp, d, v0, v1, v2, v3):
     MOVDQU(tmp, [inp+d])
     PXOR(tmp, v0)
@@ -42,7 +76,8 @@ def WriteXor_sse2(tmp, inp, outp, d, v0, v1, v2, v3):
     MOVDQU([outp+d+48], tmp)
 
 # SSE2 ChaCha20 (aka vec128).  Does not handle partial blocks, and will
-# process 3 blocks at a time.  x (the ChaCha20 state) must be 16 byte aligned.
+# process 4/2/1 blocks at a time.  x (the ChaCha20 state) must be 16 byte
+# aligned.
 with Function("blocksAmd64SSE2", (x, inp, outp, nrBlocks)):
     reg_x = GeneralPurposeRegister64()
     reg_inp = GeneralPurposeRegister64()
@@ -134,11 +169,6 @@ with Function("blocksAmd64SSE2", (x, inp, outp, nrBlocks)):
         MOV(reg_rounds, 20)
         rounds_loop = Loop()
         with rounds_loop:
-            # What was a nice set of macros is now a gigantic inlined blob
-            # of code because the C code can have the compiler handle spilling
-            # registers onto the stack and instruction scheduling, while
-            # I can't.
-
             # a += b; d ^= a; d = ROTW16(d);
             PADDD(xmm_v0, xmm_v1)
             PADDD(xmm_v4, xmm_v5)
@@ -151,25 +181,10 @@ with Function("blocksAmd64SSE2", (x, inp, outp, nrBlocks)):
 
             MOVDQA(mem_tmp0, xmm_tmp) # Save
 
-            MOVDQA(xmm_tmp, xmm_v3)
-            PSLLD(xmm_tmp, 16)
-            PSRLD(xmm_v3, 16)
-            PXOR(xmm_v3, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v7)
-            PSLLD(xmm_tmp, 16)
-            PSRLD(xmm_v7, 16)
-            PXOR(xmm_v7, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v11)
-            PSLLD(xmm_tmp, 16)
-            PSRLD(xmm_v11, 16)
-            PXOR(xmm_v11, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v15)
-            PSLLD(xmm_tmp, 16)
-            PSRLD(xmm_v15, 16)
-            PXOR(xmm_v15, xmm_tmp)
+            ROTW16_sse2(xmm_tmp, xmm_v3)
+            ROTW16_sse2(xmm_tmp, xmm_v7)
+            ROTW16_sse2(xmm_tmp, xmm_v11)
+            ROTW16_sse2(xmm_tmp, xmm_v15)
 
             # c += d; b ^= c; b = ROTW12(b);
             PADDD(xmm_v2, xmm_v3)
@@ -180,26 +195,10 @@ with Function("blocksAmd64SSE2", (x, inp, outp, nrBlocks)):
             PXOR(xmm_v5, xmm_v6)
             PXOR(xmm_v9, xmm_v10)
             PXOR(xmm_v13, xmm_v14)
-
-            MOVDQA(xmm_tmp, xmm_v1)
-            PSLLD(xmm_tmp, 12)
-            PSRLD(xmm_v1, 20)
-            PXOR(xmm_v1, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v5)
-            PSLLD(xmm_tmp, 12)
-            PSRLD(xmm_v5, 20)
-            PXOR(xmm_v5, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v9)
-            PSLLD(xmm_tmp, 12)
-            PSRLD(xmm_v9, 20)
-            PXOR(xmm_v9, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v13)
-            PSLLD(xmm_tmp, 12)
-            PSRLD(xmm_v13, 20)
-            PXOR(xmm_v13, xmm_tmp)
+            ROTW12_sse2(xmm_tmp, xmm_v1)
+            ROTW12_sse2(xmm_tmp, xmm_v5)
+            ROTW12_sse2(xmm_tmp, xmm_v9)
+            ROTW12_sse2(xmm_tmp, xmm_v13)
 
             # a += b; d ^= a; d = ROTW8(d);
             MOVDQA(xmm_tmp, mem_tmp0) # Restore
@@ -215,25 +214,10 @@ with Function("blocksAmd64SSE2", (x, inp, outp, nrBlocks)):
 
             MOVDQA(mem_tmp0, xmm_tmp) # Save
 
-            MOVDQA(xmm_tmp, xmm_v3)
-            PSLLD(xmm_tmp, 8)
-            PSRLD(xmm_v3, 24)
-            PXOR(xmm_v3, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v7)
-            PSLLD(xmm_tmp, 8)
-            PSRLD(xmm_v7, 24)
-            PXOR(xmm_v7, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v11)
-            PSLLD(xmm_tmp, 8)
-            PSRLD(xmm_v11, 24)
-            PXOR(xmm_v11, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v15)
-            PSLLD(xmm_tmp, 8)
-            PSRLD(xmm_v15, 24)
-            PXOR(xmm_v15, xmm_tmp)
+            ROTW8_sse2(xmm_tmp, xmm_v3)
+            ROTW8_sse2(xmm_tmp, xmm_v7)
+            ROTW8_sse2(xmm_tmp, xmm_v11)
+            ROTW8_sse2(xmm_tmp, xmm_v15)
 
             # c += d; b ^= c; b = ROTW7(b)
             PADDD(xmm_v2, xmm_v3)
@@ -244,26 +228,10 @@ with Function("blocksAmd64SSE2", (x, inp, outp, nrBlocks)):
             PXOR(xmm_v5, xmm_v6)
             PXOR(xmm_v9, xmm_v10)
             PXOR(xmm_v13, xmm_v14)
-
-            MOVDQA(xmm_tmp, xmm_v1)
-            PSLLD(xmm_tmp, 7)
-            PSRLD(xmm_v1, 25)
-            PXOR(xmm_v1, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v5)
-            PSLLD(xmm_tmp, 7)
-            PSRLD(xmm_v5, 25)
-            PXOR(xmm_v5, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v9)
-            PSLLD(xmm_tmp, 7)
-            PSRLD(xmm_v9, 25)
-            PXOR(xmm_v9, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v13)
-            PSLLD(xmm_tmp, 7)
-            PSRLD(xmm_v13, 25)
-            PXOR(xmm_v13, xmm_tmp)
+            ROTW7_sse2(xmm_tmp, xmm_v1)
+            ROTW7_sse2(xmm_tmp, xmm_v5)
+            ROTW7_sse2(xmm_tmp, xmm_v9)
+            ROTW7_sse2(xmm_tmp, xmm_v13)
 
             # b = ROTV1(b); c = ROTV2(c);  d = ROTV3(d);
             PSHUFD(xmm_v1, xmm_v1, 0x39)
@@ -293,25 +261,10 @@ with Function("blocksAmd64SSE2", (x, inp, outp, nrBlocks)):
 
             MOVDQA(mem_tmp0, xmm_tmp) # Save
 
-            MOVDQA(xmm_tmp, xmm_v3)
-            PSLLD(xmm_tmp, 16)
-            PSRLD(xmm_v3, 16)
-            PXOR(xmm_v3, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v7)
-            PSLLD(xmm_tmp, 16)
-            PSRLD(xmm_v7, 16)
-            PXOR(xmm_v7, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v11)
-            PSLLD(xmm_tmp, 16)
-            PSRLD(xmm_v11, 16)
-            PXOR(xmm_v11, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v15)
-            PSLLD(xmm_tmp, 16)
-            PSRLD(xmm_v15, 16)
-            PXOR(xmm_v15, xmm_tmp)
+            ROTW16_sse2(xmm_tmp, xmm_v3)
+            ROTW16_sse2(xmm_tmp, xmm_v7)
+            ROTW16_sse2(xmm_tmp, xmm_v11)
+            ROTW16_sse2(xmm_tmp, xmm_v15)
 
             # c += d; b ^= c; b = ROTW12(b);
             PADDD(xmm_v2, xmm_v3)
@@ -322,26 +275,10 @@ with Function("blocksAmd64SSE2", (x, inp, outp, nrBlocks)):
             PXOR(xmm_v5, xmm_v6)
             PXOR(xmm_v9, xmm_v10)
             PXOR(xmm_v13, xmm_v14)
-
-            MOVDQA(xmm_tmp, xmm_v1)
-            PSLLD(xmm_tmp, 12)
-            PSRLD(xmm_v1, 20)
-            PXOR(xmm_v1, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v5)
-            PSLLD(xmm_tmp, 12)
-            PSRLD(xmm_v5, 20)
-            PXOR(xmm_v5, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v9)
-            PSLLD(xmm_tmp, 12)
-            PSRLD(xmm_v9, 20)
-            PXOR(xmm_v9, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v13)
-            PSLLD(xmm_tmp, 12)
-            PSRLD(xmm_v13, 20)
-            PXOR(xmm_v13, xmm_tmp)
+            ROTW12_sse2(xmm_tmp, xmm_v1)
+            ROTW12_sse2(xmm_tmp, xmm_v5)
+            ROTW12_sse2(xmm_tmp, xmm_v9)
+            ROTW12_sse2(xmm_tmp, xmm_v13)
 
             # a += b; d ^= a; d = ROTW8(d);
             MOVDQA(xmm_tmp, mem_tmp0) # Restore
@@ -357,25 +294,10 @@ with Function("blocksAmd64SSE2", (x, inp, outp, nrBlocks)):
 
             MOVDQA(mem_tmp0, xmm_tmp) # Save
 
-            MOVDQA(xmm_tmp, xmm_v3)
-            PSLLD(xmm_tmp, 8)
-            PSRLD(xmm_v3, 24)
-            PXOR(xmm_v3, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v7)
-            PSLLD(xmm_tmp, 8)
-            PSRLD(xmm_v7, 24)
-            PXOR(xmm_v7, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v11)
-            PSLLD(xmm_tmp, 8)
-            PSRLD(xmm_v11, 24)
-            PXOR(xmm_v11, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v15)
-            PSLLD(xmm_tmp, 8)
-            PSRLD(xmm_v15, 24)
-            PXOR(xmm_v15, xmm_tmp)
+            ROTW8_sse2(xmm_tmp, xmm_v3)
+            ROTW8_sse2(xmm_tmp, xmm_v7)
+            ROTW8_sse2(xmm_tmp, xmm_v11)
+            ROTW8_sse2(xmm_tmp, xmm_v15)
 
             # c += d; b ^= c; b = ROTW7(b)
             PADDD(xmm_v2, xmm_v3)
@@ -386,26 +308,10 @@ with Function("blocksAmd64SSE2", (x, inp, outp, nrBlocks)):
             PXOR(xmm_v5, xmm_v6)
             PXOR(xmm_v9, xmm_v10)
             PXOR(xmm_v13, xmm_v14)
-
-            MOVDQA(xmm_tmp, xmm_v1)
-            PSLLD(xmm_tmp, 7)
-            PSRLD(xmm_v1, 25)
-            PXOR(xmm_v1, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v5)
-            PSLLD(xmm_tmp, 7)
-            PSRLD(xmm_v5, 25)
-            PXOR(xmm_v5, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v9)
-            PSLLD(xmm_tmp, 7)
-            PSRLD(xmm_v9, 25)
-            PXOR(xmm_v9, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v13)
-            PSLLD(xmm_tmp, 7)
-            PSRLD(xmm_v13, 25)
-            PXOR(xmm_v13, xmm_tmp)
+            ROTW7_sse2(xmm_tmp, xmm_v1)
+            ROTW7_sse2(xmm_tmp, xmm_v5)
+            ROTW7_sse2(xmm_tmp, xmm_v9)
+            ROTW7_sse2(xmm_tmp, xmm_v13)
 
             # b = ROTV1(b); c = ROTV2(c);  d = ROTV3(d);
             PSHUFD(xmm_v1, xmm_v1, 0x93)
@@ -509,64 +415,32 @@ with Function("blocksAmd64SSE2", (x, inp, outp, nrBlocks)):
             PADDD(xmm_v4, xmm_v5)
             PXOR(xmm_v3, xmm_v0)
             PXOR(xmm_v7, xmm_v4)
-
-            MOVDQA(xmm_tmp, xmm_v3)
-            PSLLD(xmm_tmp, 16)
-            PSRLD(xmm_v3, 16)
-            PXOR(xmm_v3, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v7)
-            PSLLD(xmm_tmp, 16)
-            PSRLD(xmm_v7, 16)
-            PXOR(xmm_v7, xmm_tmp)
+            ROTW16_sse2(xmm_tmp, xmm_v3)
+            ROTW16_sse2(xmm_tmp, xmm_v7)
 
             # c += d; b ^= c; b = ROTW12(b);
             PADDD(xmm_v2, xmm_v3)
             PADDD(xmm_v6, xmm_v7)
             PXOR(xmm_v1, xmm_v2)
             PXOR(xmm_v5, xmm_v6)
-
-            MOVDQA(xmm_tmp, xmm_v1)
-            PSLLD(xmm_tmp, 12)
-            PSRLD(xmm_v1, 20)
-            PXOR(xmm_v1, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v5)
-            PSLLD(xmm_tmp, 12)
-            PSRLD(xmm_v5, 20)
-            PXOR(xmm_v5, xmm_tmp)
+            ROTW12_sse2(xmm_tmp, xmm_v1)
+            ROTW12_sse2(xmm_tmp, xmm_v5)
 
             # a += b; d ^= a; d = ROTW8(d);
             PADDD(xmm_v0, xmm_v1)
             PADDD(xmm_v4, xmm_v5)
             PXOR(xmm_v3, xmm_v0)
             PXOR(xmm_v7, xmm_v4)
-
-            MOVDQA(xmm_tmp, xmm_v3)
-            PSLLD(xmm_tmp, 8)
-            PSRLD(xmm_v3, 24)
-            PXOR(xmm_v3, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v7)
-            PSLLD(xmm_tmp, 8)
-            PSRLD(xmm_v7, 24)
-            PXOR(xmm_v7, xmm_tmp)
+            ROTW8_sse2(xmm_tmp, xmm_v3)
+            ROTW8_sse2(xmm_tmp, xmm_v7)
 
             # c += d; b ^= c; b = ROTW7(b)
             PADDD(xmm_v2, xmm_v3)
             PADDD(xmm_v6, xmm_v7)
             PXOR(xmm_v1, xmm_v2)
             PXOR(xmm_v5, xmm_v6)
-
-            MOVDQA(xmm_tmp, xmm_v1)
-            PSLLD(xmm_tmp, 7)
-            PSRLD(xmm_v1, 25)
-            PXOR(xmm_v1, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v5)
-            PSLLD(xmm_tmp, 7)
-            PSRLD(xmm_v5, 25)
-            PXOR(xmm_v5, xmm_tmp)
+            ROTW7_sse2(xmm_tmp, xmm_v1)
+            ROTW7_sse2(xmm_tmp, xmm_v5)
 
             # b = ROTV1(b); c = ROTV2(c);  d = ROTV3(d);
             PSHUFD(xmm_v1, xmm_v1, 0x39)
@@ -581,64 +455,32 @@ with Function("blocksAmd64SSE2", (x, inp, outp, nrBlocks)):
             PADDD(xmm_v4, xmm_v5)
             PXOR(xmm_v3, xmm_v0)
             PXOR(xmm_v7, xmm_v4)
-
-            MOVDQA(xmm_tmp, xmm_v3)
-            PSLLD(xmm_tmp, 16)
-            PSRLD(xmm_v3, 16)
-            PXOR(xmm_v3, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v7)
-            PSLLD(xmm_tmp, 16)
-            PSRLD(xmm_v7, 16)
-            PXOR(xmm_v7, xmm_tmp)
+            ROTW16_sse2(xmm_tmp, xmm_v3)
+            ROTW16_sse2(xmm_tmp, xmm_v7)
 
             # c += d; b ^= c; b = ROTW12(b);
             PADDD(xmm_v2, xmm_v3)
             PADDD(xmm_v6, xmm_v7)
             PXOR(xmm_v1, xmm_v2)
             PXOR(xmm_v5, xmm_v6)
-
-            MOVDQA(xmm_tmp, xmm_v1)
-            PSLLD(xmm_tmp, 12)
-            PSRLD(xmm_v1, 20)
-            PXOR(xmm_v1, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v5)
-            PSLLD(xmm_tmp, 12)
-            PSRLD(xmm_v5, 20)
-            PXOR(xmm_v5, xmm_tmp)
+            ROTW12_sse2(xmm_tmp, xmm_v1)
+            ROTW12_sse2(xmm_tmp, xmm_v5)
 
             # a += b; d ^= a; d = ROTW8(d);
             PADDD(xmm_v0, xmm_v1)
             PADDD(xmm_v4, xmm_v5)
             PXOR(xmm_v3, xmm_v0)
             PXOR(xmm_v7, xmm_v4)
-
-            MOVDQA(xmm_tmp, xmm_v3)
-            PSLLD(xmm_tmp, 8)
-            PSRLD(xmm_v3, 24)
-            PXOR(xmm_v3, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v7)
-            PSLLD(xmm_tmp, 8)
-            PSRLD(xmm_v7, 24)
-            PXOR(xmm_v7, xmm_tmp)
+            ROTW8_sse2(xmm_tmp, xmm_v3)
+            ROTW8_sse2(xmm_tmp, xmm_v7)
 
             # c += d; b ^= c; b = ROTW7(b)
             PADDD(xmm_v2, xmm_v3)
             PADDD(xmm_v6, xmm_v7)
             PXOR(xmm_v1, xmm_v2)
             PXOR(xmm_v5, xmm_v6)
-
-            MOVDQA(xmm_tmp, xmm_v1)
-            PSLLD(xmm_tmp, 7)
-            PSRLD(xmm_v1, 25)
-            PXOR(xmm_v1, xmm_tmp)
-
-            MOVDQA(xmm_tmp, xmm_v5)
-            PSLLD(xmm_tmp, 7)
-            PSRLD(xmm_v5, 25)
-            PXOR(xmm_v5, xmm_tmp)
+            ROTW7_sse2(xmm_tmp, xmm_v1)
+            ROTW7_sse2(xmm_tmp, xmm_v5)
 
             # b = ROTV1(b); c = ROTV2(c);  d = ROTV3(d);
             PSHUFD(xmm_v1, xmm_v1, 0x93)
@@ -688,38 +530,22 @@ with Function("blocksAmd64SSE2", (x, inp, outp, nrBlocks)):
             # a += b; d ^= a; d = ROTW16(d);
             PADDD(xmm_v0, xmm_v1)
             PXOR(xmm_v3, xmm_v0)
-
-            MOVDQA(xmm_tmp, xmm_v3)
-            PSLLD(xmm_tmp, 16)
-            PSRLD(xmm_v3, 16)
-            PXOR(xmm_v3, xmm_tmp)
+            ROTW16_sse2(xmm_tmp, xmm_v3)
 
             # c += d; b ^= c; b = ROTW12(b);
             PADDD(xmm_v2, xmm_v3)
             PXOR(xmm_v1, xmm_v2)
-
-            MOVDQA(xmm_tmp, xmm_v1)
-            PSLLD(xmm_tmp, 12)
-            PSRLD(xmm_v1, 20)
-            PXOR(xmm_v1, xmm_tmp)
+            ROTW12_sse2(xmm_tmp, xmm_v1)
 
             # a += b; d ^= a; d = ROTW8(d);
             PADDD(xmm_v0, xmm_v1)
             PXOR(xmm_v3, xmm_v0)
-
-            MOVDQA(xmm_tmp, xmm_v3)
-            PSLLD(xmm_tmp, 8)
-            PSRLD(xmm_v3, 24)
-            PXOR(xmm_v3, xmm_tmp)
+            ROTW8_sse2(xmm_tmp, xmm_v3)
 
             # c += d; b ^= c; b = ROTW7(b)
             PADDD(xmm_v2, xmm_v3)
             PXOR(xmm_v1, xmm_v2)
-
-            MOVDQA(xmm_tmp, xmm_v1)
-            PSLLD(xmm_tmp, 7)
-            PSRLD(xmm_v1, 25)
-            PXOR(xmm_v1, xmm_tmp)
+            ROTW7_sse2(xmm_tmp, xmm_v1)
 
             # b = ROTV1(b); c = ROTV2(c);  d = ROTV3(d);
             PSHUFD(xmm_v1, xmm_v1, 0x39)
@@ -729,38 +555,22 @@ with Function("blocksAmd64SSE2", (x, inp, outp, nrBlocks)):
             # a += b; d ^= a; d = ROTW16(d);
             PADDD(xmm_v0, xmm_v1)
             PXOR(xmm_v3, xmm_v0)
-
-            MOVDQA(xmm_tmp, xmm_v3)
-            PSLLD(xmm_tmp, 16)
-            PSRLD(xmm_v3, 16)
-            PXOR(xmm_v3, xmm_tmp)
+            ROTW16_sse2(xmm_tmp, xmm_v3)
 
             # c += d; b ^= c; b = ROTW12(b);
             PADDD(xmm_v2, xmm_v3)
             PXOR(xmm_v1, xmm_v2)
-
-            MOVDQA(xmm_tmp, xmm_v1)
-            PSLLD(xmm_tmp, 12)
-            PSRLD(xmm_v1, 20)
-            PXOR(xmm_v1, xmm_tmp)
+            ROTW12_sse2(xmm_tmp, xmm_v1)
 
             # a += b; d ^= a; d = ROTW8(d);
             PADDD(xmm_v0, xmm_v1)
             PXOR(xmm_v3, xmm_v0)
-
-            MOVDQA(xmm_tmp, xmm_v3)
-            PSLLD(xmm_tmp, 8)
-            PSRLD(xmm_v3, 24)
-            PXOR(xmm_v3, xmm_tmp)
+            ROTW8_sse2(xmm_tmp, xmm_v3)
 
             # c += d; b ^= c; b = ROTW7(b)
             PADDD(xmm_v2, xmm_v3)
             PXOR(xmm_v1, xmm_v2)
-
-            MOVDQA(xmm_tmp, xmm_v1)
-            PSLLD(xmm_tmp, 7)
-            PSRLD(xmm_v1, 25)
-            PXOR(xmm_v1, xmm_tmp)
+            ROTW7_sse2(xmm_tmp, xmm_v1)
 
             # b = ROTV1(b); c = ROTV2(c);  d = ROTV3(d);
             PSHUFD(xmm_v1, xmm_v1, 0x93)
