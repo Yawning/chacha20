@@ -347,41 +347,45 @@ func TestChaCha20Vectorized(t *testing.T) {
 		blocksFn = oldBlocksFn
 	}()
 
-	const testSz = BlockSize*256 + 1 // Force both parallel and serial.
+	const testSz = 1024 * 16
 
 	// Generate a random key, nonce and input.
 	var key [KeySize]byte
 	var nonce [NonceSize]byte
 	var input [testSz]byte
+	var vecOut [testSz]byte
+	var refOut [testSz]byte
 	rand.Read(key[:])
 	rand.Read(nonce[:])
 	rand.Read(input[:])
 
-	// Encrypt with the vectorized implementation.
-	c, err := NewCipher(key[:], nonce[:])
-	if err != nil {
-		t.Fatal(err)
-	}
-	var vecOut [testSz]byte
-	c.XORKeyStream(vecOut[:], input[:])
-
-	c, err = NewCipher(key[:], nonce[:])
-	if err != nil {
-		t.Fatal(err)
-	}
-	var refOut [testSz]byte
-	blocksFn = blocksRef
-	c.XORKeyStream(refOut[:], input[:])
-	if !bytes.Equal(refOut[:], vecOut[:]) {
-		for i, v := range refOut {
-			if vecOut[i] != v {
-				t.Errorf("mismatch at offset: %d %x != %x", i, vecOut[i], v)
-				break
-			}
+	for i := 0; i < testSz; i++ {
+		// Encrypt with the vectorized implementation.
+		c, err := NewCipher(key[:], nonce[:])
+		if err != nil {
+			t.Fatal(err)
 		}
-		t.Errorf("ref: %s", hex.Dump(refOut[:]))
-		t.Errorf("vec: %s", hex.Dump(vecOut[:]))
-		t.Errorf("refOut != vecOut")
+		c.XORKeyStream(vecOut[:], input[:i])
+
+		c, err = NewCipher(key[:], nonce[:])
+		if err != nil {
+			t.Fatal(err)
+		}
+		blocksFn = blocksRef
+		c.XORKeyStream(refOut[:], input[:i])
+		if !bytes.Equal(refOut[:], vecOut[:]) {
+			for i, v := range refOut {
+				if vecOut[i] != v {
+					t.Errorf("mismatch at offset: %d %x != %x", i, vecOut[i], v)
+					break
+				}
+			}
+			t.Errorf("ref: %s", hex.Dump(refOut[:]))
+			t.Errorf("vec: %s", hex.Dump(vecOut[:]))
+			t.Errorf("refOut != vecOut")
+			break
+		}
+		blocksFn = oldBlocksFn
 	}
 }
 
@@ -402,6 +406,26 @@ func doBenchN(b *testing.B, n int) {
 
 func BenchmarkChaCha20_16(b *testing.B) {
 	doBenchN(b, 16)
+}
+
+func BenchmarkChaCha20_64(b *testing.B) {
+	doBenchN(b, 64)
+}
+
+func BenchmarkChaCha20_128(b *testing.B) {
+	doBenchN(b, 128)
+}
+
+func BenchmarkChaCha20_192(b *testing.B) {
+	doBenchN(b, 192)
+}
+
+func BenchmarkChaCha20_256(b *testing.B) {
+	doBenchN(b, 256)
+}
+
+func BenchmarkChaCha20_512(b *testing.B) {
+	doBenchN(b, 512)
 }
 
 func BenchmarkChaCha20_1k(b *testing.B) {

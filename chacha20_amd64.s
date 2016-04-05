@@ -20,8 +20,8 @@ TEXT ·blocksAmd64SSE2(SB),4,$0-32
 	MOVL DI, 8(SP)
 	MOVL DI, 12(SP)
 	SUBQ $4, DX
-	JCS vector_loop_end
-vector_loop_begin:
+	JCS vector_loop4_end
+vector_loop4_begin:
 		MOVO 0(AX), X0
 		MOVO 16(AX), X1
 		MOVO 32(AX), X2
@@ -344,22 +344,187 @@ rounds_loop1_begin:
 		ADDQ $256, BX
 		ADDQ $256, CX
 		SUBQ $4, DX
-		JCC vector_loop_begin
-vector_loop_end:
+		JCC vector_loop4_begin
+vector_loop4_end:
 	ADDQ $4, DX
 	JEQ out
-	MOVO 0(AX), X4
-	MOVO 16(AX), X5
-	MOVO 32(AX), X6
-	MOVO 48(AX), X7
-	MOVO 0(SP), X8
-serial_loop_begin:
-		MOVO X4, X0
-		MOVO X5, X1
-		MOVO X6, X2
-		MOVO X7, X3
+	MOVO 0(AX), X8
+	MOVO 16(AX), X9
+	MOVO 32(AX), X10
+	MOVO 48(AX), X11
+	MOVO 0(SP), X13
+	SUBQ $2, DX
+	JCS vector_loop2_end
+vector_loop2_begin:
+		MOVO X8, X0
+		MOVO X9, X1
+		MOVO X10, X2
+		MOVO X11, X3
+		MOVO X0, X4
+		MOVO X1, X5
+		MOVO X2, X6
+		MOVO X3, X7
+		PADDQ X13, X7
 		MOVQ $20, DI
 rounds_loop0_begin:
+			PADDL X1, X0
+			PADDL X5, X4
+			PXOR X0, X3
+			PXOR X4, X7
+			MOVO X3, X12
+			PSLLL $16, X12
+			PSRLL $16, X3
+			PXOR X12, X3
+			MOVO X7, X12
+			PSLLL $16, X12
+			PSRLL $16, X7
+			PXOR X12, X7
+			PADDL X3, X2
+			PADDL X7, X6
+			PXOR X2, X1
+			PXOR X6, X5
+			MOVO X1, X12
+			PSLLL $12, X12
+			PSRLL $20, X1
+			PXOR X12, X1
+			MOVO X5, X12
+			PSLLL $12, X12
+			PSRLL $20, X5
+			PXOR X12, X5
+			PADDL X1, X0
+			PADDL X5, X4
+			PXOR X0, X3
+			PXOR X4, X7
+			MOVO X3, X12
+			PSLLL $8, X12
+			PSRLL $24, X3
+			PXOR X12, X3
+			MOVO X7, X12
+			PSLLL $8, X12
+			PSRLL $24, X7
+			PXOR X12, X7
+			PADDL X3, X2
+			PADDL X7, X6
+			PXOR X2, X1
+			PXOR X6, X5
+			MOVO X1, X12
+			PSLLL $7, X12
+			PSRLL $25, X1
+			PXOR X12, X1
+			MOVO X5, X12
+			PSLLL $7, X12
+			PSRLL $25, X5
+			PXOR X12, X5
+			PSHUFL $57, X1, X1
+			PSHUFL $57, X5, X5
+			PSHUFL $78, X2, X2
+			PSHUFL $78, X6, X6
+			PSHUFL $147, X3, X3
+			PSHUFL $147, X7, X7
+			PADDL X1, X0
+			PADDL X5, X4
+			PXOR X0, X3
+			PXOR X4, X7
+			MOVO X3, X12
+			PSLLL $16, X12
+			PSRLL $16, X3
+			PXOR X12, X3
+			MOVO X7, X12
+			PSLLL $16, X12
+			PSRLL $16, X7
+			PXOR X12, X7
+			PADDL X3, X2
+			PADDL X7, X6
+			PXOR X2, X1
+			PXOR X6, X5
+			MOVO X1, X12
+			PSLLL $12, X12
+			PSRLL $20, X1
+			PXOR X12, X1
+			MOVO X5, X12
+			PSLLL $12, X12
+			PSRLL $20, X5
+			PXOR X12, X5
+			PADDL X1, X0
+			PADDL X5, X4
+			PXOR X0, X3
+			PXOR X4, X7
+			MOVO X3, X12
+			PSLLL $8, X12
+			PSRLL $24, X3
+			PXOR X12, X3
+			MOVO X7, X12
+			PSLLL $8, X12
+			PSRLL $24, X7
+			PXOR X12, X7
+			PADDL X3, X2
+			PADDL X7, X6
+			PXOR X2, X1
+			PXOR X6, X5
+			MOVO X1, X12
+			PSLLL $7, X12
+			PSRLL $25, X1
+			PXOR X12, X1
+			MOVO X5, X12
+			PSLLL $7, X12
+			PSRLL $25, X5
+			PXOR X12, X5
+			PSHUFL $147, X1, X1
+			PSHUFL $147, X5, X5
+			PSHUFL $78, X2, X2
+			PSHUFL $78, X6, X6
+			PSHUFL $57, X3, X3
+			PSHUFL $57, X7, X7
+			SUBQ $2, DI
+			JNE rounds_loop0_begin
+		PADDL X8, X0
+		PADDL X9, X1
+		PADDL X10, X2
+		PADDL X11, X3
+		MOVOU 0(BX), X12
+		PXOR X0, X12
+		MOVOU X12, 0(CX)
+		MOVOU 16(BX), X12
+		PXOR X1, X12
+		MOVOU X12, 16(CX)
+		MOVOU 32(BX), X12
+		PXOR X2, X12
+		MOVOU X12, 32(CX)
+		MOVOU 48(BX), X12
+		PXOR X3, X12
+		MOVOU X12, 48(CX)
+		PADDQ X13, X11
+		PADDL X8, X4
+		PADDL X9, X5
+		PADDL X10, X6
+		PADDL X11, X7
+		MOVOU 64(BX), X12
+		PXOR X4, X12
+		MOVOU X12, 64(CX)
+		MOVOU 80(BX), X12
+		PXOR X5, X12
+		MOVOU X12, 80(CX)
+		MOVOU 96(BX), X12
+		PXOR X6, X12
+		MOVOU X12, 96(CX)
+		MOVOU 112(BX), X12
+		PXOR X7, X12
+		MOVOU X12, 112(CX)
+		PADDQ X13, X11
+		ADDQ $128, BX
+		ADDQ $128, CX
+		SUBQ $2, DX
+		JCC vector_loop2_begin
+vector_loop2_end:
+	ADDQ $2, DX
+	JEQ serial_loop_end
+serial_loop_begin:
+		MOVO X8, X0
+		MOVO X9, X1
+		MOVO X10, X2
+		MOVO X11, X3
+		MOVQ $20, DI
+rounds_loop2_begin:
 			PADDL X1, X0
 			PXOR X0, X3
 			MOVO X3, X12
@@ -415,11 +580,11 @@ rounds_loop0_begin:
 			PSHUFL $78, X2, X2
 			PSHUFL $57, X3, X3
 			SUBQ $2, DI
-			JNE rounds_loop0_begin
-		PADDL X4, X0
-		PADDL X5, X1
-		PADDL X6, X2
-		PADDL X7, X3
+			JNE rounds_loop2_begin
+		PADDL X8, X0
+		PADDL X9, X1
+		PADDL X10, X2
+		PADDL X11, X3
 		MOVOU 0(BX), X12
 		PXOR X0, X12
 		MOVOU X12, 0(CX)
@@ -432,12 +597,13 @@ rounds_loop0_begin:
 		MOVOU 48(BX), X12
 		PXOR X3, X12
 		MOVOU X12, 48(CX)
-		PADDQ X8, X7
+		PADDQ X13, X11
 		ADDQ $64, BX
 		ADDQ $64, CX
 		SUBQ $1, DX
 		JNE serial_loop_begin
-	MOVO X7, 48(AX)
+serial_loop_end:
+	MOVO X11, 48(AX)
 out:
 	PXOR X0, X0
 	MOVO X0, 16(SP)

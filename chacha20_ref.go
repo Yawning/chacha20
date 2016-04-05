@@ -184,7 +184,7 @@ func blocksRef(x *[stateSize]uint32, in []byte, out []byte, nrBlocks int, isIetf
 				outArr[15] = x15 + x[15]
 			}
 		} else {
-			// Slow path, either the architecture cares about alignment, or is not litt;e endian.
+			// Slow path, either the architecture cares about alignment, or is not little endian.
 			x0 += sigma0
 			x1 += sigma1
 			x2 += sigma2
