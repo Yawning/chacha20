@@ -12,8 +12,7 @@
 #
 # Code based on Ted Krovetz's vec128 C implementation, with corrections
 # to use a 64 bit counter instead of 32 bit, and to allow unaligned input and
-# output pointers, and the parallel loop reworked to process 4 blocks at a
-# time.
+# output pointers.
 #
 # Dependencies: https://github.com/Maratyszcza/PeachPy
 #
@@ -212,11 +211,9 @@ with Function("blocksAmd64SSE2", (x, inp, outp, nrBlocks)):
         rounds_loop = Loop()
         with rounds_loop:
             # What was a nice set of macros is now a gigantic inlined blob
-            # of code because the C code gets the optimizer to re-order
-            # things, while this implementation does not have such luxuries.
-            #
-            # On the positive side, this does an extra block per iteration
-            # than the original code.
+            # of code because the C code can have the compiler handle spilling
+            # registers onto the stack and instruction scheduling, while
+            # I can't.
 
             # a += b; d ^= a; d = ROTW16(d);
             PADDD(xmm_v0, xmm_v1)
