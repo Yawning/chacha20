@@ -337,7 +337,7 @@ func TestChaCha20(t *testing.T) {
 
 func TestChaCha20Vectorized(t *testing.T) {
 	if !usingVectors {
-		t.Skip("vectorized ChaCha20 support not compiled in")
+		t.Skip("vectorized ChaCha20 support not enabled")
 	}
 
 	// Save the batch blocks processing routine so we can mess with it, and
@@ -373,19 +373,82 @@ func TestChaCha20Vectorized(t *testing.T) {
 		}
 		blocksFn = blocksRef
 		c.XORKeyStream(refOut[:], input[:i])
-		if !bytes.Equal(refOut[:], vecOut[:]) {
-			for i, v := range refOut {
-				if vecOut[i] != v {
-					t.Errorf("mismatch at offset: %d %x != %x", i, vecOut[i], v)
+		if !bytes.Equal(refOut[:i], vecOut[:i]) {
+			for j, v := range refOut {
+				if vecOut[j] != v {
+					t.Errorf("[%d] mismatch at offset: %d %x != %x", i, j, vecOut[j], v)
 					break
 				}
 			}
-			t.Errorf("ref: %s", hex.Dump(refOut[:]))
-			t.Errorf("vec: %s", hex.Dump(vecOut[:]))
+			t.Errorf("ref: %s", hex.Dump(refOut[:i]))
+			t.Errorf("vec: %s", hex.Dump(vecOut[:i]))
 			t.Errorf("refOut != vecOut")
 			break
 		}
 		blocksFn = oldBlocksFn
+	}
+}
+
+func TestChaCha20VectorizedIncremental(t *testing.T) {
+	if !usingVectors {
+		t.Skip("vectorized ChaCha20 support not enabled")
+	}
+
+	// Save the batch blocks processing routine so we can mess with it, and
+	// restore it when we're done.
+	oldBlocksFn := blocksFn
+	defer func() {
+		blocksFn = oldBlocksFn
+	}()
+
+	const (
+		maxBlocks = 128
+		testSz    = (maxBlocks * (maxBlocks + 1) / 2) * BlockSize
+	)
+
+	// Generate a random key, nonce and input.
+	var key [KeySize]byte
+	var nonce [NonceSize]byte
+	var input [testSz]byte
+	var vecOut [testSz]byte
+	var refOut [testSz]byte
+	rand.Read(key[:])
+	rand.Read(nonce[:])
+	rand.Read(input[:])
+
+	// Using the vectorized version, encrypt an ever increasing number of
+	// blocks at a time.
+	c, err := NewCipher(key[:], nonce[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	off := 0
+	for nrBlocks := 0; nrBlocks <= maxBlocks; nrBlocks++ {
+		cnt := nrBlocks * BlockSize
+		c.XORKeyStream(vecOut[off:off+cnt], input[off:off+cnt])
+		off += cnt
+	}
+
+	// Encrypt an equivalent amount of data with a one shot call to the
+	// reference implementation.
+	c, err = NewCipher(key[:], nonce[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocksFn = blocksRef
+	c.XORKeyStream(refOut[:], input[:])
+
+	// And compare the output.
+	if !bytes.Equal(refOut[:], vecOut[:]) {
+		for j, v := range refOut {
+			if vecOut[j] != v {
+				t.Errorf("incremental mismatch at offset: %d %x != %x", j, vecOut[j], v)
+				break
+			}
+		}
+		// t.Errorf("ref: %s", hex.Dump(refOut[:]))
+		// t.Errorf("vec: %s", hex.Dump(vecOut[:]))
+		t.Errorf("refOut != vecOut")
 	}
 }
 

@@ -9,6 +9,6 @@ Features:
  * 20 round, 256 bit key only.  Everything else is pointless and stupid.
  * IETF 96 bit nonce variant.
  * XChaCha 24 byte nonce variant.
- * SSE2 support on amd64 targets.
+ * SSE2 and AVX2 support on amd64 targets.
  * Incremental encrypt/decrypt support, unlike golang.org/x/crypto/salsa20.
 
