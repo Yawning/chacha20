@@ -9,6 +9,8 @@ package chacha20
 
 import (
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
 	"encoding/hex"
 	"testing"
@@ -497,4 +499,21 @@ func BenchmarkChaCha20_1k(b *testing.B) {
 
 func BenchmarkChaCha20_64k(b *testing.B) {
 	doBenchN(b, 65536)
+}
+
+func BenchmarkCTRAES256_64k(b *testing.B) {
+	const sz = 64 * 1024
+	var key [32]byte
+	var iv [16]byte
+	s := make([]byte, sz)
+	blk, err := aes.NewCipher(key[:])
+	if err != nil {
+		b.Fatal(err)
+	}
+	c := cipher.NewCTR(blk, iv[:])
+	b.SetBytes(sz)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		c.XORKeyStream(s, s)
+	}
 }
