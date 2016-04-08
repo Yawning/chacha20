@@ -841,6 +841,7 @@ rounds_loop6_begin:
 		JCC vector_loop6_begin
 vector_loop6_end:
 	ADDQ $6, DX
+	JEQ out_write_even
 	BYTE $0xC4; BYTE $0x62; BYTE $0x7D; BYTE $0x5A; BYTE $0x20 // VBROADCASTI128 ymm12, [rax]
 	BYTE $0xC5; BYTE $0x7D; BYTE $0x6F; BYTE $0x2C; BYTE $0x24 // VMOVDQA ymm13, [rsp]
 	SUBQ $4, DX
@@ -990,8 +991,7 @@ rounds_loop4_begin:
 		JCC vector_loop4_begin
 vector_loop4_end:
 	ADDQ $4, DX
-	SUBQ $2, DX
-	JCS vector_loop2_end
+	JEQ out_write_even
 vector_loop2_begin:
 		BYTE $0xC5; BYTE $0x7D; BYTE $0x7F; BYTE $0xE4 // VMOVDQA ymm4, ymm12
 		BYTE $0xC5; BYTE $0xFD; BYTE $0x6F; BYTE $0xE9 // VMOVDQA ymm5, ymm1
@@ -1057,89 +1057,24 @@ rounds_loop2_begin:
 		BYTE $0xC4; BYTE $0x63; BYTE $0x4D; BYTE $0x46; BYTE $0xF7; BYTE $0x20 // VPERM2I128 ymm14, ymm6, ymm7, 32
 		BYTE $0xC5; BYTE $0x0D; BYTE $0xEF; BYTE $0x73; BYTE $0x20 // VPXOR ymm14, ymm14, [rbx + 32]
 		BYTE $0xC5; BYTE $0x7E; BYTE $0x7F; BYTE $0x71; BYTE $0x20 // VMOVDQU [rcx + 32], ymm14
+		SUBQ $1, DX
+		JEQ out_write_odd
+		BYTE $0xC4; BYTE $0xC1; BYTE $0x65; BYTE $0xFE; BYTE $0xDD // VPADDD ymm3, ymm3, ymm13
 		BYTE $0xC4; BYTE $0x63; BYTE $0x5D; BYTE $0x46; BYTE $0xF5; BYTE $0x31 // VPERM2I128 ymm14, ymm4, ymm5, 49
 		BYTE $0xC5; BYTE $0x0D; BYTE $0xEF; BYTE $0x73; BYTE $0x40 // VPXOR ymm14, ymm14, [rbx + 64]
 		BYTE $0xC5; BYTE $0x7E; BYTE $0x7F; BYTE $0x71; BYTE $0x40 // VMOVDQU [rcx + 64], ymm14
 		BYTE $0xC4; BYTE $0x63; BYTE $0x4D; BYTE $0x46; BYTE $0xF7; BYTE $0x31 // VPERM2I128 ymm14, ymm6, ymm7, 49
 		BYTE $0xC5; BYTE $0x0D; BYTE $0xEF; BYTE $0x73; BYTE $0x60 // VPXOR ymm14, ymm14, [rbx + 96]
 		BYTE $0xC5; BYTE $0x7E; BYTE $0x7F; BYTE $0x71; BYTE $0x60 // VMOVDQU [rcx + 96], ymm14
-		BYTE $0xC4; BYTE $0xC1; BYTE $0x65; BYTE $0xFE; BYTE $0xDD // VPADDD ymm3, ymm3, ymm13
+		SUBQ $1, DX
+		JEQ out_write_even
 		ADDQ $128, BX
 		ADDQ $128, CX
-		SUBQ $2, DX
-		JCC vector_loop2_begin
-vector_loop2_end:
-	ADDQ $2, DX
-	BYTE $0xC5; BYTE $0xF9; BYTE $0x7F; BYTE $0x58; BYTE $0x30 // VMOVDQA [rax + 48], xmm3
-	SUBQ $1, DX
-	JCS out_serial
-	BYTE $0xC5; BYTE $0x7D; BYTE $0x7F; BYTE $0xE4 // VMOVDQA ymm4, ymm12
-	BYTE $0xC5; BYTE $0xFD; BYTE $0x6F; BYTE $0xE9 // VMOVDQA ymm5, ymm1
-	BYTE $0xC5; BYTE $0xFD; BYTE $0x6F; BYTE $0xF2 // VMOVDQA ymm6, ymm2
-	BYTE $0xC5; BYTE $0xFD; BYTE $0x6F; BYTE $0xFB // VMOVDQA ymm7, ymm3
-	MOVQ $20, DX
-rounds_loop1_begin:
-		BYTE $0xC5; BYTE $0xDD; BYTE $0xFE; BYTE $0xE5 // VPADDD ymm4, ymm4, ymm5
-		BYTE $0xC5; BYTE $0xC5; BYTE $0xEF; BYTE $0xFC // VPXOR ymm7, ymm7, ymm4
-		BYTE $0xC5; BYTE $0x8D; BYTE $0x72; BYTE $0xF7; BYTE $0x10 // VPSLLD ymm14, ymm7, 16
-		BYTE $0xC5; BYTE $0xC5; BYTE $0x72; BYTE $0xD7; BYTE $0x10 // VPSRLD ymm7, ymm7, 16
-		BYTE $0xC4; BYTE $0xC1; BYTE $0x45; BYTE $0xEF; BYTE $0xFE // VPXOR ymm7, ymm7, ymm14
-		BYTE $0xC5; BYTE $0xCD; BYTE $0xFE; BYTE $0xF7 // VPADDD ymm6, ymm6, ymm7
-		BYTE $0xC5; BYTE $0xD5; BYTE $0xEF; BYTE $0xEE // VPXOR ymm5, ymm5, ymm6
-		BYTE $0xC5; BYTE $0x8D; BYTE $0x72; BYTE $0xF5; BYTE $0x0C // VPSLLD ymm14, ymm5, 12
-		BYTE $0xC5; BYTE $0xD5; BYTE $0x72; BYTE $0xD5; BYTE $0x14 // VPSRLD ymm5, ymm5, 20
-		BYTE $0xC4; BYTE $0xC1; BYTE $0x55; BYTE $0xEF; BYTE $0xEE // VPXOR ymm5, ymm5, ymm14
-		BYTE $0xC5; BYTE $0xDD; BYTE $0xFE; BYTE $0xE5 // VPADDD ymm4, ymm4, ymm5
-		BYTE $0xC5; BYTE $0xC5; BYTE $0xEF; BYTE $0xFC // VPXOR ymm7, ymm7, ymm4
-		BYTE $0xC5; BYTE $0x8D; BYTE $0x72; BYTE $0xF7; BYTE $0x08 // VPSLLD ymm14, ymm7, 8
-		BYTE $0xC5; BYTE $0xC5; BYTE $0x72; BYTE $0xD7; BYTE $0x18 // VPSRLD ymm7, ymm7, 24
-		BYTE $0xC4; BYTE $0xC1; BYTE $0x45; BYTE $0xEF; BYTE $0xFE // VPXOR ymm7, ymm7, ymm14
-		BYTE $0xC5; BYTE $0xCD; BYTE $0xFE; BYTE $0xF7 // VPADDD ymm6, ymm6, ymm7
-		BYTE $0xC5; BYTE $0xD5; BYTE $0xEF; BYTE $0xEE // VPXOR ymm5, ymm5, ymm6
-		BYTE $0xC5; BYTE $0x8D; BYTE $0x72; BYTE $0xF5; BYTE $0x07 // VPSLLD ymm14, ymm5, 7
-		BYTE $0xC5; BYTE $0xD5; BYTE $0x72; BYTE $0xD5; BYTE $0x19 // VPSRLD ymm5, ymm5, 25
-		BYTE $0xC4; BYTE $0xC1; BYTE $0x55; BYTE $0xEF; BYTE $0xEE // VPXOR ymm5, ymm5, ymm14
-		BYTE $0xC5; BYTE $0xFD; BYTE $0x70; BYTE $0xED; BYTE $0x39 // VPSHUFD ymm5, ymm5, 57
-		BYTE $0xC5; BYTE $0xFD; BYTE $0x70; BYTE $0xF6; BYTE $0x4E // VPSHUFD ymm6, ymm6, 78
-		BYTE $0xC5; BYTE $0xFD; BYTE $0x70; BYTE $0xFF; BYTE $0x93 // VPSHUFD ymm7, ymm7, 147
-		BYTE $0xC5; BYTE $0xDD; BYTE $0xFE; BYTE $0xE5 // VPADDD ymm4, ymm4, ymm5
-		BYTE $0xC5; BYTE $0xC5; BYTE $0xEF; BYTE $0xFC // VPXOR ymm7, ymm7, ymm4
-		BYTE $0xC5; BYTE $0x8D; BYTE $0x72; BYTE $0xF7; BYTE $0x10 // VPSLLD ymm14, ymm7, 16
-		BYTE $0xC5; BYTE $0xC5; BYTE $0x72; BYTE $0xD7; BYTE $0x10 // VPSRLD ymm7, ymm7, 16
-		BYTE $0xC4; BYTE $0xC1; BYTE $0x45; BYTE $0xEF; BYTE $0xFE // VPXOR ymm7, ymm7, ymm14
-		BYTE $0xC5; BYTE $0xCD; BYTE $0xFE; BYTE $0xF7 // VPADDD ymm6, ymm6, ymm7
-		BYTE $0xC5; BYTE $0xD5; BYTE $0xEF; BYTE $0xEE // VPXOR ymm5, ymm5, ymm6
-		BYTE $0xC5; BYTE $0x8D; BYTE $0x72; BYTE $0xF5; BYTE $0x0C // VPSLLD ymm14, ymm5, 12
-		BYTE $0xC5; BYTE $0xD5; BYTE $0x72; BYTE $0xD5; BYTE $0x14 // VPSRLD ymm5, ymm5, 20
-		BYTE $0xC4; BYTE $0xC1; BYTE $0x55; BYTE $0xEF; BYTE $0xEE // VPXOR ymm5, ymm5, ymm14
-		BYTE $0xC5; BYTE $0xDD; BYTE $0xFE; BYTE $0xE5 // VPADDD ymm4, ymm4, ymm5
-		BYTE $0xC5; BYTE $0xC5; BYTE $0xEF; BYTE $0xFC // VPXOR ymm7, ymm7, ymm4
-		BYTE $0xC5; BYTE $0x8D; BYTE $0x72; BYTE $0xF7; BYTE $0x08 // VPSLLD ymm14, ymm7, 8
-		BYTE $0xC5; BYTE $0xC5; BYTE $0x72; BYTE $0xD7; BYTE $0x18 // VPSRLD ymm7, ymm7, 24
-		BYTE $0xC4; BYTE $0xC1; BYTE $0x45; BYTE $0xEF; BYTE $0xFE // VPXOR ymm7, ymm7, ymm14
-		BYTE $0xC5; BYTE $0xCD; BYTE $0xFE; BYTE $0xF7 // VPADDD ymm6, ymm6, ymm7
-		BYTE $0xC5; BYTE $0xD5; BYTE $0xEF; BYTE $0xEE // VPXOR ymm5, ymm5, ymm6
-		BYTE $0xC5; BYTE $0x8D; BYTE $0x72; BYTE $0xF5; BYTE $0x07 // VPSLLD ymm14, ymm5, 7
-		BYTE $0xC5; BYTE $0xD5; BYTE $0x72; BYTE $0xD5; BYTE $0x19 // VPSRLD ymm5, ymm5, 25
-		BYTE $0xC4; BYTE $0xC1; BYTE $0x55; BYTE $0xEF; BYTE $0xEE // VPXOR ymm5, ymm5, ymm14
-		BYTE $0xC5; BYTE $0xFD; BYTE $0x70; BYTE $0xED; BYTE $0x93 // VPSHUFD ymm5, ymm5, 147
-		BYTE $0xC5; BYTE $0xFD; BYTE $0x70; BYTE $0xF6; BYTE $0x4E // VPSHUFD ymm6, ymm6, 78
-		BYTE $0xC5; BYTE $0xFD; BYTE $0x70; BYTE $0xFF; BYTE $0x39 // VPSHUFD ymm7, ymm7, 57
-		SUBQ $2, DX
-		JNE rounds_loop1_begin
-	BYTE $0xC4; BYTE $0xC1; BYTE $0x5D; BYTE $0xFE; BYTE $0xE4 // VPADDD ymm4, ymm4, ymm12
-	BYTE $0xC5; BYTE $0xD5; BYTE $0xFE; BYTE $0xE9 // VPADDD ymm5, ymm5, ymm1
-	BYTE $0xC5; BYTE $0xCD; BYTE $0xFE; BYTE $0xF2 // VPADDD ymm6, ymm6, ymm2
-	BYTE $0xC5; BYTE $0xC5; BYTE $0xFE; BYTE $0xFB // VPADDD ymm7, ymm7, ymm3
-	BYTE $0xC4; BYTE $0x63; BYTE $0x5D; BYTE $0x46; BYTE $0xF5; BYTE $0x20 // VPERM2I128 ymm14, ymm4, ymm5, 32
-	BYTE $0xC5; BYTE $0x0D; BYTE $0xEF; BYTE $0x33 // VPXOR ymm14, ymm14, [rbx]
-	BYTE $0xC5; BYTE $0x7E; BYTE $0x7F; BYTE $0x31 // VMOVDQU [rcx], ymm14
-	BYTE $0xC4; BYTE $0x63; BYTE $0x4D; BYTE $0x46; BYTE $0xF7; BYTE $0x20 // VPERM2I128 ymm14, ymm6, ymm7, 32
-	BYTE $0xC5; BYTE $0x0D; BYTE $0xEF; BYTE $0x73; BYTE $0x20 // VPXOR ymm14, ymm14, [rbx + 32]
-	BYTE $0xC5; BYTE $0x7E; BYTE $0x7F; BYTE $0x71; BYTE $0x20 // VMOVDQU [rcx + 32], ymm14
+		JMP vector_loop2_begin
+out_write_odd:
 	BYTE $0xC4; BYTE $0xE3; BYTE $0x65; BYTE $0x46; BYTE $0xDB; BYTE $0x01 // VPERM2I128 ymm3, ymm3, ymm3, 1
+out_write_even:
 	BYTE $0xC5; BYTE $0xF9; BYTE $0x7F; BYTE $0x58; BYTE $0x30 // VMOVDQA [rax + 48], xmm3
-out_serial:
 	MOVQ DI, SP
 	BYTE $0xC5; BYTE $0xF8; BYTE $0x77 // VZEROUPPER
 	RET

@@ -741,6 +741,9 @@ with Function("blocksAmd64AVX2", (x, inp, outp, nrBlocks), target=uarch.broadwel
     MOV([registers.rsp], reg_tmp)
     MOV([registers.rsp+16], reg_tmp)
 
+    out_write_even = Label()
+    out_write_odd = Label()
+
     #
     # 6 blocks at a time, like the avx2 code.
     #
@@ -916,6 +919,7 @@ with Function("blocksAmd64AVX2", (x, inp, outp, nrBlocks), target=uarch.broadwel
         JAE(vector_loop6.begin)
 
     ADD(reg_blocks, 6)
+    JZ(out_write_even)
 
     # We now actually can do everything in registers.
     ymm_s0 = ymm_v8
@@ -1050,14 +1054,16 @@ with Function("blocksAmd64AVX2", (x, inp, outp, nrBlocks), target=uarch.broadwel
         JAE(vector_loop4.begin)
 
     ADD(reg_blocks, 4)
+    JZ(out_write_even)
 
     #
-    # 2 blocks at a time.
+    # 2/1 blocks at a time.  The two codepaths are unified because
+    # with AVX2 we do 2 blocks at a time anyway, and this only gets called
+    # if 3/2/1 blocks are remaining, so the extra branches don't hurt that
+    # much.
     #
 
-    SUB(reg_blocks, 2)
     vector_loop2 = Loop()
-    JB(vector_loop2.end)
     with vector_loop2:
         VMOVDQA(ymm_v0, ymm_s0)
         VMOVDQA(ymm_v1, ymm_s1)
@@ -1125,107 +1131,44 @@ with Function("blocksAmd64AVX2", (x, inp, outp, nrBlocks), target=uarch.broadwel
         ADD_avx2(ymm_v1, ymm_s1)
         ADD_avx2(ymm_v2, ymm_s2)
         ADD_avx2(ymm_v3, ymm_s3)
-        WriteXor_avx2(ymm_tmp0, reg_inp, reg_outp, 0, ymm_v0, ymm_v1, ymm_v2, ymm_v3)
+
+        # XOR_WRITE(out+ 0, in+ 0, _mm256_permute2x128_si256(v0,v1,0x20));
+        VPERM2I128(ymm_tmp0, ymm_v0, ymm_v1, 0x20)
+        VPXOR(ymm_tmp0, ymm_tmp0, [reg_inp])
+        VMOVDQU([reg_outp], ymm_tmp0)
+
+        # XOR_WRITE(out+32, in+32, _mm256_permute2x128_si256(v2,v3,0x20));
+        VPERM2I128(ymm_tmp0, ymm_v2, ymm_v3, 0x20)
+        VPXOR(ymm_tmp0, ymm_tmp0, [reg_inp+32])
+        VMOVDQU([reg_outp+32], ymm_tmp0)
+
+        SUB(reg_blocks, 1)
+        JZ(out_write_odd)
+
         ADD_avx2(ymm_s3, ymm_inc)
+
+        # XOR_WRITE(out+64, in+64, _mm256_permute2x128_si256(v0,v1,0x31));
+        VPERM2I128(ymm_tmp0, ymm_v0, ymm_v1, 0x31)
+        VPXOR(ymm_tmp0, ymm_tmp0, [reg_inp+64])
+        VMOVDQU([reg_outp+64], ymm_tmp0)
+
+        # XOR_WRITE(out+96, in+96, _mm256_permute2x128_si256(v2,v3,0x31));
+        VPERM2I128(ymm_tmp0, ymm_v2, ymm_v3, 0x31)
+        VPXOR(ymm_tmp0, ymm_tmp0, [reg_inp+96])
+        VMOVDQU([reg_outp+96], ymm_tmp0)
+
+        SUB(reg_blocks, 1)
+        JZ(out_write_even)
 
         ADD(reg_inp, 2 * 64)
         ADD(reg_outp, 2 * 64)
+        JMP(vector_loop2.begin)
 
-        SUB(reg_blocks, 2)
-        JAE(vector_loop2.begin)
+    LABEL(out_write_odd)
+    VPERM2I128(ymm_s3, ymm_s3, ymm_s3, 0x01) # Odd number of blocks.
 
-    ADD(reg_blocks, 2)
+    LABEL(out_write_even)
     VMOVDQA(x_s3, ymm_s3.as_xmm) # Write back ymm_s3 to x_v3
-    SUB(reg_blocks, 1)
-    out_serial = Label()
-    JB(out_serial)
-
-    #
-    # 1 block at a time.  Only executed once, because if there was > 1,
-    # the parallel code would have processed it already.
-    #
-
-    VMOVDQA(ymm_v0, ymm_s0)
-    VMOVDQA(ymm_v1, ymm_s1)
-    VMOVDQA(ymm_v2, ymm_s2)
-    VMOVDQA(ymm_v3, ymm_s3)
-
-    reg_rounds = GeneralPurposeRegister64()
-    MOV(reg_rounds, 20)
-    rounds_loop1 = Loop()
-    with rounds_loop1:
-        # a += b; d ^= a; d = ROTW16(d);
-        ADD_avx2(ymm_v0, ymm_v1)
-        XOR_avx2(ymm_v3, ymm_v0)
-        ROTW16_avx2(ymm_tmp0, ymm_v3)
-
-        # c += d; b ^= c; b = ROTW12(b);
-        ADD_avx2(ymm_v2, ymm_v3)
-        XOR_avx2(ymm_v1, ymm_v2)
-        ROTW12_avx2(ymm_tmp0, ymm_v1)
-
-        # a += b; d ^= a; d = ROTW8(d);
-        ADD_avx2(ymm_v0, ymm_v1)
-        XOR_avx2(ymm_v3, ymm_v0)
-        ROTW8_avx2(ymm_tmp0, ymm_v3)
-
-        # c += d; b ^= c; b = ROTW7(b)
-        ADD_avx2(ymm_v2, ymm_v3)
-        XOR_avx2(ymm_v1, ymm_v2)
-        ROTW7_avx2(ymm_tmp0, ymm_v1)
-
-        # b = ROTV1(b); c = ROTV2(c);  d = ROTV3(d);
-        VPSHUFD(ymm_v1, ymm_v1, 0x39)
-        VPSHUFD(ymm_v2, ymm_v2, 0x4e)
-        VPSHUFD(ymm_v3, ymm_v3, 0x93)
-
-        # a += b; d ^= a; d = ROTW16(d);
-        ADD_avx2(ymm_v0, ymm_v1)
-        XOR_avx2(ymm_v3, ymm_v0)
-        ROTW16_avx2(ymm_tmp0, ymm_v3)
-
-        # c += d; b ^= c; b = ROTW12(b);
-        ADD_avx2(ymm_v2, ymm_v3)
-        XOR_avx2(ymm_v1, ymm_v2)
-        ROTW12_avx2(ymm_tmp0, ymm_v1)
-
-        # a += b; d ^= a; d = ROTW8(d);
-        ADD_avx2(ymm_v0, ymm_v1)
-        XOR_avx2(ymm_v3, ymm_v0)
-        ROTW8_avx2(ymm_tmp0, ymm_v3)
-
-        # c += d; b ^= c; b = ROTW7(b)
-        ADD_avx2(ymm_v2, ymm_v3)
-        XOR_avx2(ymm_v1, ymm_v2)
-        ROTW7_avx2(ymm_tmp0, ymm_v1)
-
-        # b = ROTV1(b); c = ROTV2(c);  d = ROTV3(d);
-        VPSHUFD(ymm_v1, ymm_v1, 0x93)
-        VPSHUFD(ymm_v2, ymm_v2, 0x4e)
-        VPSHUFD(ymm_v3, ymm_v3, 0x39)
-
-        SUB(reg_rounds, 2)
-        JNZ(rounds_loop1.begin)
-
-    ADD_avx2(ymm_v0, ymm_s0)
-    ADD_avx2(ymm_v1, ymm_s1)
-    ADD_avx2(ymm_v2, ymm_s2)
-    ADD_avx2(ymm_v3, ymm_s3)
-
-    # XOR_WRITE(out+ 0, in+ 0, _mm256_permute2x128_si256(v0,v1,0x20));
-    VPERM2I128(ymm_tmp0, ymm_v0, ymm_v1, 0x20)
-    VPXOR(ymm_tmp0, ymm_tmp0, [reg_inp])
-    VMOVDQU([reg_outp], ymm_tmp0)
-
-    # XOR_WRITE(out+32, in+32, _mm256_permute2x128_si256(v2,v3,0x20));
-    VPERM2I128(ymm_tmp0, ymm_v2, ymm_v3, 0x20)
-    VPXOR(ymm_tmp0, ymm_tmp0, [reg_inp+32])
-    VMOVDQU([reg_outp+32], ymm_tmp0)
-
-    VPERM2I128(ymm_s3, ymm_s3, ymm_s3, 0x01)
-    VMOVDQA(x_s3, ymm_s3.as_xmm) # Write back ymm_s3 to x_v3
-
-    LABEL(out_serial)
 
     # Remove our stack allocation.
     MOV(registers.rsp, reg_sp_save)
