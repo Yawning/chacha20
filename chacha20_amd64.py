@@ -671,7 +671,7 @@ def WriteXor_avx2(tmp, inp, outp, d, v0, v1, v2, v3):
     VMOVDQU([outp+d+96], tmp)
 
 # AVX2 ChaCha20 (aka avx2).  Does not handle partial blocks, will process
-# 6/4/2/1 blocks at a time.  Alignment blah blah blah fuck you.
+# 8/4/2 blocks at a time.  Alignment blah blah blah fuck you.
 with Function("blocksAmd64AVX2", (x, inp, outp, nrBlocks), target=uarch.broadwell):
     reg_x = GeneralPurposeRegister64()
     reg_inp = GeneralPurposeRegister64()
@@ -697,11 +697,6 @@ with Function("blocksAmd64AVX2", (x, inp, outp, nrBlocks), target=uarch.broadwel
     x_s2 = [reg_x+32]        # (Memory) Cipher state [8..11]
     x_s3 = [reg_x+48]        # (Memory) Cipher state [12..15]
 
-    ymm_tmp0 = YMMRegister()
-    ymm_s1 = YMMRegister()
-    ymm_s2 = YMMRegister()
-    ymm_s3 = YMMRegister()
-
     ymm_v0 = YMMRegister()
     ymm_v1 = YMMRegister()
     ymm_v2 = YMMRegister()
@@ -717,23 +712,29 @@ with Function("blocksAmd64AVX2", (x, inp, outp, nrBlocks), target=uarch.broadwel
     ymm_v10 = YMMRegister()
     ymm_v11 = YMMRegister()
 
-#   VBROADCASTI128(ymm_s0, x_s0)  Don't have the register for this.
-    VBROADCASTI128(ymm_s1, x_s1)
-    VBROADCASTI128(ymm_s2, x_s2)
-    VBROADCASTI128(ymm_s3, x_s3)
+    ymm_v12 = YMMRegister()
+    ymm_v13 = YMMRegister()
+    ymm_v14 = YMMRegister()
+    ymm_v15 = YMMRegister()
+
+    ymm_tmp0 = ymm_v12
 
     # Allocate the neccecary stack space for the counter vector and two ymm
     # registers that we will spill.
-    SUB(registers.rsp, 32)
+    SUB(registers.rsp, 96)
+    mem_tmp0 = [registers.rsp+64]  # (Stack) Scratch space.
+    mem_s3 = [registers.rsp+32]    # (Stack) Working copy of s3. (8x)
     mem_inc = [registers.rsp]      # (Stack) Counter increment vector.
 
-    # Increment the counter for one side of the state vector (ymm3).
+    # Increment the counter for one side of the state vector.
     VPXOR(ymm_tmp0, ymm_tmp0, ymm_tmp0)
     VMOVDQU(mem_inc, ymm_tmp0)
     reg_tmp = GeneralPurposeRegister32()
     MOV(reg_tmp, 0x00000001)
     MOV([registers.rsp+16], reg_tmp)
-    VPADDQ(ymm_s3, ymm_s3, [registers.rsp])
+    VBROADCASTI128(ymm_v3, x_s3)
+    VPADDQ(ymm_v3, ymm_v3, [registers.rsp])
+    VMOVDQA(mem_s3, ymm_v3)
 
     # As we process 2xN blocks at a time, so the counter increment for both
     # sides of the state vector is 2.
@@ -745,19 +746,18 @@ with Function("blocksAmd64AVX2", (x, inp, outp, nrBlocks), target=uarch.broadwel
     out_write_odd = Label()
 
     #
-    # 6 blocks at a time, like the avx2 code.
-    #
-    # XXX/Performance: It's highly likely that it's worth going to 8x.
+    # 8 blocks at a time.  Ted Krovetz's avx2 code does not do this, but it's
+    # a decent gain despite all the pain...
     #
 
-    vector_loop6 = Loop()
-    SUB(reg_blocks, 6)
-    JB(vector_loop6.end)
-    with vector_loop6:
+    vector_loop8 = Loop()
+    SUB(reg_blocks, 8)
+    JB(vector_loop8.end)
+    with vector_loop8:
         VBROADCASTI128(ymm_v0, x_s0)
-        VMOVDQA(ymm_v1, ymm_s1)
-        VMOVDQA(ymm_v2, ymm_s2)
-        VMOVDQA(ymm_v3, ymm_s3)
+        VBROADCASTI128(ymm_v1, x_s1)
+        VBROADCASTI128(ymm_v2, x_s2)
+        VMOVDQA(ymm_v3, mem_s3)
 
         VMOVDQA(ymm_v4, ymm_v0)
         VMOVDQA(ymm_v5, ymm_v1)
@@ -769,6 +769,11 @@ with Function("blocksAmd64AVX2", (x, inp, outp, nrBlocks), target=uarch.broadwel
         VMOVDQA(ymm_v10, ymm_v2)
         VPADDQ(ymm_v11, ymm_v7, mem_inc)
 
+        VMOVDQA(ymm_v12, ymm_v0)
+        VMOVDQA(ymm_v13, ymm_v1)
+        VMOVDQA(ymm_v14, ymm_v2)
+        VPADDQ(ymm_v15, ymm_v11, mem_inc)
+
         reg_rounds = GeneralPurposeRegister64()
         MOV(reg_rounds, 20)
         rounds_loop6 = Loop()
@@ -777,156 +782,231 @@ with Function("blocksAmd64AVX2", (x, inp, outp, nrBlocks), target=uarch.broadwel
             ADD_avx2(ymm_v0, ymm_v1)
             ADD_avx2(ymm_v4, ymm_v5)
             ADD_avx2(ymm_v8, ymm_v9)
+            ADD_avx2(ymm_v12, ymm_v13)
             XOR_avx2(ymm_v3, ymm_v0)
             XOR_avx2(ymm_v7, ymm_v4)
             XOR_avx2(ymm_v11, ymm_v8)
+            XOR_avx2(ymm_v15, ymm_v12)
+
+            VMOVDQA(mem_tmp0, ymm_tmp0) # Save
+
             ROTW16_avx2(ymm_tmp0, ymm_v3)
             ROTW16_avx2(ymm_tmp0, ymm_v7)
             ROTW16_avx2(ymm_tmp0, ymm_v11)
+            ROTW16_avx2(ymm_tmp0, ymm_v15)
 
             # c += d; b ^= c; b = ROTW12(b);
             ADD_avx2(ymm_v2, ymm_v3)
             ADD_avx2(ymm_v6, ymm_v7)
             ADD_avx2(ymm_v10, ymm_v11)
+            ADD_avx2(ymm_v14, ymm_v15)
             XOR_avx2(ymm_v1, ymm_v2)
             XOR_avx2(ymm_v5, ymm_v6)
             XOR_avx2(ymm_v9, ymm_v10)
+            XOR_avx2(ymm_v13, ymm_v14)
             ROTW12_avx2(ymm_tmp0, ymm_v1)
             ROTW12_avx2(ymm_tmp0, ymm_v5)
             ROTW12_avx2(ymm_tmp0, ymm_v9)
+            ROTW12_avx2(ymm_tmp0, ymm_v13)
 
             # a += b; d ^= a; d = ROTW8(d);
+            VMOVDQA(ymm_tmp0, mem_tmp0) # Restore
+
             ADD_avx2(ymm_v0, ymm_v1)
             ADD_avx2(ymm_v4, ymm_v5)
             ADD_avx2(ymm_v8, ymm_v9)
+            ADD_avx2(ymm_v12, ymm_v13)
             XOR_avx2(ymm_v3, ymm_v0)
             XOR_avx2(ymm_v7, ymm_v4)
             XOR_avx2(ymm_v11, ymm_v8)
+            XOR_avx2(ymm_v15, ymm_v12)
+
+            VMOVDQA(mem_tmp0, ymm_tmp0) # Save
+
             ROTW8_avx2(ymm_tmp0, ymm_v3)
             ROTW8_avx2(ymm_tmp0, ymm_v7)
             ROTW8_avx2(ymm_tmp0, ymm_v11)
+            ROTW8_avx2(ymm_tmp0, ymm_v15)
 
             # c += d; b ^= c; b = ROTW7(b)
             ADD_avx2(ymm_v2, ymm_v3)
             ADD_avx2(ymm_v6, ymm_v7)
             ADD_avx2(ymm_v10, ymm_v11)
+            ADD_avx2(ymm_v14, ymm_v15)
             XOR_avx2(ymm_v1, ymm_v2)
             XOR_avx2(ymm_v5, ymm_v6)
             XOR_avx2(ymm_v9, ymm_v10)
+            XOR_avx2(ymm_v13, ymm_v14)
             ROTW7_avx2(ymm_tmp0, ymm_v1)
             ROTW7_avx2(ymm_tmp0, ymm_v5)
             ROTW7_avx2(ymm_tmp0, ymm_v9)
+            ROTW7_avx2(ymm_tmp0, ymm_v13)
 
             # b = ROTV1(b); c = ROTV2(c);  d = ROTV3(d);
             VPSHUFD(ymm_v1, ymm_v1, 0x39)
             VPSHUFD(ymm_v5, ymm_v5, 0x39)
             VPSHUFD(ymm_v9, ymm_v9, 0x39)
+            VPSHUFD(ymm_v13, ymm_v13, 0x39)
             VPSHUFD(ymm_v2, ymm_v2, 0x4e)
             VPSHUFD(ymm_v6, ymm_v6, 0x4e)
             VPSHUFD(ymm_v10, ymm_v10, 0x4e)
+            VPSHUFD(ymm_v14, ymm_v14, 0x4e)
             VPSHUFD(ymm_v3, ymm_v3, 0x93)
             VPSHUFD(ymm_v7, ymm_v7, 0x93)
             VPSHUFD(ymm_v11, ymm_v11, 0x93)
+            VPSHUFD(ymm_v15, ymm_v15, 0x93)
 
             # a += b; d ^= a; d = ROTW16(d);
+            VMOVDQA(ymm_tmp0, mem_tmp0) # Restore
+
             ADD_avx2(ymm_v0, ymm_v1)
             ADD_avx2(ymm_v4, ymm_v5)
             ADD_avx2(ymm_v8, ymm_v9)
+            ADD_avx2(ymm_v12, ymm_v13)
             XOR_avx2(ymm_v3, ymm_v0)
             XOR_avx2(ymm_v7, ymm_v4)
             XOR_avx2(ymm_v11, ymm_v8)
+            XOR_avx2(ymm_v15, ymm_v12)
+
+            VMOVDQA(mem_tmp0, ymm_tmp0) # Save
+
             ROTW16_avx2(ymm_tmp0, ymm_v3)
             ROTW16_avx2(ymm_tmp0, ymm_v7)
             ROTW16_avx2(ymm_tmp0, ymm_v11)
+            ROTW16_avx2(ymm_tmp0, ymm_v15)
 
             # c += d; b ^= c; b = ROTW12(b);
             ADD_avx2(ymm_v2, ymm_v3)
             ADD_avx2(ymm_v6, ymm_v7)
             ADD_avx2(ymm_v10, ymm_v11)
+            ADD_avx2(ymm_v14, ymm_v15)
             XOR_avx2(ymm_v1, ymm_v2)
             XOR_avx2(ymm_v5, ymm_v6)
             XOR_avx2(ymm_v9, ymm_v10)
+            XOR_avx2(ymm_v13, ymm_v14)
             ROTW12_avx2(ymm_tmp0, ymm_v1)
             ROTW12_avx2(ymm_tmp0, ymm_v5)
             ROTW12_avx2(ymm_tmp0, ymm_v9)
+            ROTW12_avx2(ymm_tmp0, ymm_v13)
 
             # a += b; d ^= a; d = ROTW8(d);
+            VMOVDQA(ymm_tmp0, mem_tmp0) # Restore
+
             ADD_avx2(ymm_v0, ymm_v1)
             ADD_avx2(ymm_v4, ymm_v5)
             ADD_avx2(ymm_v8, ymm_v9)
+            ADD_avx2(ymm_v12, ymm_v13)
             XOR_avx2(ymm_v3, ymm_v0)
             XOR_avx2(ymm_v7, ymm_v4)
             XOR_avx2(ymm_v11, ymm_v8)
+            XOR_avx2(ymm_v15, ymm_v12)
+
+            VMOVDQA(mem_tmp0, ymm_tmp0) # Save
+
             ROTW8_avx2(ymm_tmp0, ymm_v3)
             ROTW8_avx2(ymm_tmp0, ymm_v7)
             ROTW8_avx2(ymm_tmp0, ymm_v11)
+            ROTW8_avx2(ymm_tmp0, ymm_v15)
 
             # c += d; b ^= c; b = ROTW7(b)
             ADD_avx2(ymm_v2, ymm_v3)
             ADD_avx2(ymm_v6, ymm_v7)
             ADD_avx2(ymm_v10, ymm_v11)
+            ADD_avx2(ymm_v14, ymm_v15)
             XOR_avx2(ymm_v1, ymm_v2)
             XOR_avx2(ymm_v5, ymm_v6)
             XOR_avx2(ymm_v9, ymm_v10)
+            XOR_avx2(ymm_v13, ymm_v14)
             ROTW7_avx2(ymm_tmp0, ymm_v1)
             ROTW7_avx2(ymm_tmp0, ymm_v5)
             ROTW7_avx2(ymm_tmp0, ymm_v9)
+            ROTW7_avx2(ymm_tmp0, ymm_v13)
 
             # b = ROTV1(b); c = ROTV2(c);  d = ROTV3(d);
             VPSHUFD(ymm_v1, ymm_v1, 0x93)
             VPSHUFD(ymm_v5, ymm_v5, 0x93)
             VPSHUFD(ymm_v9, ymm_v9, 0x93)
+            VPSHUFD(ymm_v13, ymm_v13, 0x93)
             VPSHUFD(ymm_v2, ymm_v2, 0x4e)
             VPSHUFD(ymm_v6, ymm_v6, 0x4e)
             VPSHUFD(ymm_v10, ymm_v10, 0x4e)
+            VPSHUFD(ymm_v14, ymm_v14, 0x4e)
             VPSHUFD(ymm_v3, ymm_v3, 0x39)
             VPSHUFD(ymm_v7, ymm_v7, 0x39)
             VPSHUFD(ymm_v11, ymm_v11, 0x39)
+            VPSHUFD(ymm_v15, ymm_v15, 0x39)
+
+            VMOVDQA(ymm_tmp0, mem_tmp0) # Restore
 
             SUB(reg_rounds, 2)
             JNZ(rounds_loop6.begin)
 
+        # ymm_v12 is in mem_tmp0 and is current....
+
+        # XXX: I assume VBROADCASTI128 is about as fast as VMOVDQA....
         VBROADCASTI128(ymm_tmp0, x_s0)
         ADD_avx2(ymm_v0, ymm_tmp0)
         ADD_avx2(ymm_v4, ymm_tmp0)
         ADD_avx2(ymm_v8, ymm_tmp0)
+        ADD_avx2(ymm_tmp0, mem_tmp0)
+        VMOVDQA(mem_tmp0, ymm_tmp0)
 
-        # ADD_avx2(ymm_v0, ymm_s0)
-        ADD_avx2(ymm_v1, ymm_s1)
-        ADD_avx2(ymm_v2, ymm_s2)
-        ADD_avx2(ymm_v3, ymm_s3)
+        VBROADCASTI128(ymm_tmp0, x_s1)
+        ADD_avx2(ymm_v1, ymm_tmp0)
+        ADD_avx2(ymm_v5, ymm_tmp0)
+        ADD_avx2(ymm_v9, ymm_tmp0)
+        ADD_avx2(ymm_v13, ymm_tmp0)
+
+        VBROADCASTI128(ymm_tmp0, x_s2)
+        ADD_avx2(ymm_v2, ymm_tmp0)
+        ADD_avx2(ymm_v6, ymm_tmp0)
+        ADD_avx2(ymm_v10, ymm_tmp0)
+        ADD_avx2(ymm_v14, ymm_tmp0)
+
+        ADD_avx2(ymm_v3, mem_s3)
         WriteXor_avx2(ymm_tmp0, reg_inp, reg_outp, 0, ymm_v0, ymm_v1, ymm_v2, ymm_v3)
-        ADD_avx2(ymm_s3, mem_inc)
+        VMOVDQA(ymm_v3, mem_s3)
+        ADD_avx2(ymm_v3, mem_inc)
 
-        # ADD_avx2(ymm_v4, ymm_s0)
-        ADD_avx2(ymm_v5, ymm_s1)
-        ADD_avx2(ymm_v6, ymm_s2)
-        ADD_avx2(ymm_v7, ymm_s3)
+        ADD_avx2(ymm_v7, ymm_v3)
         WriteXor_avx2(ymm_tmp0, reg_inp, reg_outp, 128, ymm_v4, ymm_v5, ymm_v6, ymm_v7)
-        ADD_avx2(ymm_s3, mem_inc)
+        ADD_avx2(ymm_v3, mem_inc)
 
-        # ADD_avx2(ymm_v8, ymm_s0)
-        ADD_avx2(ymm_v9, ymm_s1)
-        ADD_avx2(ymm_v10, ymm_s2)
-        ADD_avx2(ymm_v11, ymm_s3)
+        ADD_avx2(ymm_v11, ymm_v3)
         WriteXor_avx2(ymm_tmp0, reg_inp, reg_outp, 256, ymm_v8, ymm_v9, ymm_v10, ymm_v11)
-        ADD_avx2(ymm_s3, mem_inc)
+        ADD_avx2(ymm_v3, mem_inc)
 
-        ADD(reg_inp, 6 * 64)
-        ADD(reg_outp, 6 * 64)
+        VMOVDQA(ymm_v12, mem_tmp0)
+        ADD_avx2(ymm_v15, ymm_v3)
+        WriteXor_avx2(ymm_v0, reg_inp, reg_outp, 384, ymm_v12, ymm_v13, ymm_v14, ymm_v15)
+        ADD_avx2(ymm_v3, mem_inc)
 
-        SUB(reg_blocks, 6)
-        JAE(vector_loop6.begin)
+        VMOVDQA(mem_s3, ymm_v3)
 
-    ADD(reg_blocks, 6)
+        ADD(reg_inp, 8 * 64)
+        ADD(reg_outp, 8 * 64)
+
+        SUB(reg_blocks, 8)
+        JAE(vector_loop8.begin)
+
+    # ymm_v3 contains a current copy of mem_s3 either from when it was built,
+    # or because the loop updates it.  Copy this before we mess with the block
+    # counter in case we need to write it back and return.
+    ymm_s3 = ymm_v11
+    VMOVDQA(ymm_s3, ymm_v3)
+
+    ADD(reg_blocks, 8)
     JZ(out_write_even)
 
     # We now actually can do everything in registers.
     ymm_s0 = ymm_v8
     VBROADCASTI128(ymm_s0, x_s0)
-    ymm_inc = ymm_v9
+    ymm_s1 = ymm_v9
+    VBROADCASTI128(ymm_s1, x_s1)
+    ymm_s2 = ymm_v10
+    VBROADCASTI128(ymm_s2, x_s2)
+    ymm_inc = ymm_v14
     VMOVDQA(ymm_inc, mem_inc)
-    ymm_tmp0 = ymm_v10
 
     #
     # 4 blocks at a time.
@@ -1169,6 +1249,11 @@ with Function("blocksAmd64AVX2", (x, inp, outp, nrBlocks), target=uarch.broadwel
 
     LABEL(out_write_even)
     VMOVDQA(x_s3, ymm_s3.as_xmm) # Write back ymm_s3 to x_v3
+
+    # Paranoia, cleanse the scratch space.
+    VPXOR(ymm_v0, ymm_v0, ymm_v0)
+    VMOVDQA(mem_tmp0, ymm_v0)
+    VMOVDQA(mem_s3, ymm_v0)
 
     # Remove our stack allocation.
     MOV(registers.rsp, reg_sp_save)
