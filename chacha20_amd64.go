@@ -15,13 +15,13 @@ import (
 
 var usingAVX2 = false
 
-func blocksAmd64SSE2(x *uint32, in, out *byte, nrBlocks uint)
+func blocksAmd64SSE2(x *uint32, inp, outp *byte, nrBlocks uint)
 
-func blocksAmd64AVX2(x *uint32, in, out *byte, nrBlocks uint)
+func blocksAmd64AVX2(x *uint32, inp, outp *byte, nrBlocks uint)
 
 func cpuidAmd64(cpuidParams *uint32)
 
-func xgetbvAmd64(xcrIndex uint32, xcrVec *uint32)
+func xgetbv0Amd64(xcrVec *uint32)
 
 func blocksAmd64(x *[stateSize]uint32, in []byte, out []byte, nrBlocks int, isIetf bool) {
 	// Probably unneeded, but stating this explicitly simplifies the assembly.
@@ -68,7 +68,7 @@ func supportsAVX2() bool {
 		return false
 	}
 	xcrRegs := [2]uint32{}
-	xgetbvAmd64(0, &xcrRegs[0])
+	xgetbv0Amd64(&xcrRegs[0])
 	if xcrRegs[0]&6 != 6 {
 		return false
 	}

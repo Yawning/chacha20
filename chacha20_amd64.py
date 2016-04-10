@@ -1283,18 +1283,17 @@ with Function("cpuidAmd64", (cpuidParams,)):
     RETURN()
 
 #
-# XGETBV
+# XGETBV (ECX = 0)
 #
 
-xcrIndex = Argument(uint32_t)
 xcrVec = Argument(ptr(uint32_t))
 
-with Function("xgetbvAmd64", (xcrIndex, xcrVec)):
+with Function("xgetbv0Amd64", (xcrVec,)):
     reg_vec = GeneralPurposeRegister64()
-    reg_idx = registers.ecx
 
-    LOAD.ARGUMENT(reg_idx, xcrIndex)
     LOAD.ARGUMENT(reg_vec, xcrVec)
+
+    XOR(registers.ecx, registers.ecx)
 
     XGETBV()
 

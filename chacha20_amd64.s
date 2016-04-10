@@ -1177,10 +1177,10 @@ TEXT ·cpuidAmd64(SB),4,$0-8
 	MOVL DX, 12(R15)
 	RET
 
-// func xgetbvAmd64(xcrIndex uint32, xcrVec *uint32)
-TEXT ·xgetbvAmd64(SB),4,$0-12
-	MOVL xcrIndex+0(FP), CX
-	MOVQ xcrVec+8(FP), BX
+// func xgetbv0Amd64(xcrVec *uint32)
+TEXT ·xgetbv0Amd64(SB),4,$0-8
+	MOVQ xcrVec+0(FP), BX
+	XORL CX, CX
 	BYTE $0x0F; BYTE $0x01; BYTE $0xD0 // XGETBV
 	MOVL AX, 0(BX)
 	MOVL DX, 4(BX)
