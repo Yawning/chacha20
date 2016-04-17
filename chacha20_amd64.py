@@ -776,8 +776,8 @@ with Function("blocksAmd64AVX2", (x, inp, outp, nrBlocks), target=uarch.broadwel
 
         reg_rounds = GeneralPurposeRegister64()
         MOV(reg_rounds, 20)
-        rounds_loop6 = Loop()
-        with rounds_loop6:
+        rounds_loop8 = Loop()
+        with rounds_loop8:
             # a += b; d ^= a; d = ROTW16(d);
             ADD_avx2(ymm_v0, ymm_v1)
             ADD_avx2(ymm_v4, ymm_v5)
@@ -939,7 +939,7 @@ with Function("blocksAmd64AVX2", (x, inp, outp, nrBlocks), target=uarch.broadwel
             VMOVDQA(ymm_tmp0, mem_tmp0) # Restore
 
             SUB(reg_rounds, 2)
-            JNZ(rounds_loop6.begin)
+            JNZ(rounds_loop8.begin)
 
         # ymm_v12 is in mem_tmp0 and is current....
 
