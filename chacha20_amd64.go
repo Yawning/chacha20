@@ -60,9 +60,17 @@ func supportsAVX2() bool {
 		avx2Bit    = 1 << 5
 	)
 
+	// Check to see if CPUID actually supports the leaf that indicates AVX2.
+	// CPUID.(EAX=0H, ECX=0H) >= 7
+	regs := [4]uint32{0x00}
+	cpuidAmd64(&regs[0])
+	if regs[0] < 7 {
+		return false
+	}
+
 	// Check to see if the OS knows how to save/restore XMM/YMM state.
 	// CPUID.(EAX=01H, ECX=0H):ECX.OSXSAVE[bit 27]==1
-	regs := [4]uint32{0x01}
+	regs = [4]uint32{0x01}
 	cpuidAmd64(&regs[0])
 	if regs[2]&osXsaveBit == 0 {
 		return false
