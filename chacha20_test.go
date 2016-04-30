@@ -404,7 +404,7 @@ func TestChaCha20VectorizedIncremental(t *testing.T) {
 	}()
 
 	const (
-		maxBlocks = 128
+		maxBlocks = 256
 		testSz    = (maxBlocks * (maxBlocks + 1) / 2) * BlockSize
 	)
 
@@ -487,6 +487,10 @@ func BenchmarkChaCha20_192(b *testing.B) {
 
 func BenchmarkChaCha20_256(b *testing.B) {
 	doBenchN(b, 256)
+}
+
+func BenchmarkChaCha20_384(b *testing.B) {
+	doBenchN(b, 384)
 }
 
 func BenchmarkChaCha20_512(b *testing.B) {
