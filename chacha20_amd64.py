@@ -1251,6 +1251,9 @@ with Function("blocksAmd64AVX2", (x, inp, outp, nrBlocks), target=uarch.broadwel
     VMOVDQA(mem_tmp0, ymm_v0)
     VMOVDQA(mem_s3, ymm_v0)
 
+    # Clear all YMM (and XMM) registers.
+    VZEROALL()
+
     # Remove our stack allocation.
     MOV(registers.rsp, reg_sp_save)
 
