@@ -91,11 +91,8 @@ with Function("blocksAmd64SSE2", (x, inp, outp, nrBlocks)):
     LOAD.ARGUMENT(reg_blocks, nrBlocks)
 
     # Align the stack to a 32 byte boundary.
-    reg_align = GeneralPurposeRegister64()
     MOV(reg_sp_save, registers.rsp)
-    MOV(reg_align, 0x1f)
-    NOT(reg_align)
-    AND(registers.rsp, reg_align)
+    AND(registers.rsp, 0xffffffffffffffe0)
     SUB(registers.rsp, 0x20)
 
     # Build the counter increment vector on the stack, and allocate the scratch
@@ -683,11 +680,8 @@ with Function("blocksAmd64AVX2", (x, inp, outp, nrBlocks), target=uarch.broadwel
     LOAD.ARGUMENT(reg_blocks, nrBlocks)
 
     # Align the stack to a 32 byte boundary.
-    reg_align = GeneralPurposeRegister64()
     MOV(reg_sp_save, registers.rsp)
-    MOV(reg_align, 0x1f)
-    NOT(reg_align)
-    AND(registers.rsp, reg_align)
+    AND(registers.rsp, 0xffffffffffffffe0)
     SUB(registers.rsp, 0x20)
 
     x_s0 = [reg_x]           # (Memory) Cipher state [0..3]
@@ -1270,7 +1264,7 @@ with Function("cpuidAmd64", (cpuidParams,)):
     LOAD.ARGUMENT(reg_params, cpuidParams)
 
     MOV(registers.eax, [reg_params])
-    MOV(registers.ecx, [reg_params+4])
+    MOV(registers.ecx, [reg_params+8])
 
     CPUID()
 
