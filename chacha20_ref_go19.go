@@ -5,13 +5,14 @@
 // Commons "CC0" public domain dedication. See LICENSE or
 // <http://creativecommons.org/publicdomain/zero/1.0/> for full details.
 
-// +build !go1.9
+// +build go1.9
 
 package chacha20
 
 import (
 	"encoding/binary"
 	"math"
+	"math/bits"
 	"unsafe"
 )
 
@@ -35,114 +36,114 @@ func blocksRef(x *[stateSize]uint32, in []byte, out []byte, nrBlocks int, isIetf
 			// quarterround(x, 0, 4, 8, 12)
 			x0 += x4
 			x12 ^= x0
-			x12 = (x12 << 16) | (x12 >> 16)
+			x12 = bits.RotateLeft32(x12, 16)
 			x8 += x12
 			x4 ^= x8
-			x4 = (x4 << 12) | (x4 >> 20)
+			x4 = bits.RotateLeft32(x4, 12)
 			x0 += x4
 			x12 ^= x0
-			x12 = (x12 << 8) | (x12 >> 24)
+			x12 = bits.RotateLeft32(x12, 8)
 			x8 += x12
 			x4 ^= x8
-			x4 = (x4 << 7) | (x4 >> 25)
+			x4 = bits.RotateLeft32(x4, 7)
 
 			// quarterround(x, 1, 5, 9, 13)
 			x1 += x5
 			x13 ^= x1
-			x13 = (x13 << 16) | (x13 >> 16)
+			x13 = bits.RotateLeft32(x13, 16)
 			x9 += x13
 			x5 ^= x9
-			x5 = (x5 << 12) | (x5 >> 20)
+			x5 = bits.RotateLeft32(x5, 12)
 			x1 += x5
 			x13 ^= x1
-			x13 = (x13 << 8) | (x13 >> 24)
+			x13 = bits.RotateLeft32(x13, 8)
 			x9 += x13
 			x5 ^= x9
-			x5 = (x5 << 7) | (x5 >> 25)
+			x5 = bits.RotateLeft32(x5, 7)
 
 			// quarterround(x, 2, 6, 10, 14)
 			x2 += x6
 			x14 ^= x2
-			x14 = (x14 << 16) | (x14 >> 16)
+			x14 = bits.RotateLeft32(x14, 16)
 			x10 += x14
 			x6 ^= x10
-			x6 = (x6 << 12) | (x6 >> 20)
+			x6 = bits.RotateLeft32(x6, 12)
 			x2 += x6
 			x14 ^= x2
-			x14 = (x14 << 8) | (x14 >> 24)
+			x14 = bits.RotateLeft32(x14, 8)
 			x10 += x14
 			x6 ^= x10
-			x6 = (x6 << 7) | (x6 >> 25)
+			x6 = bits.RotateLeft32(x6, 7)
 
 			// quarterround(x, 3, 7, 11, 15)
 			x3 += x7
 			x15 ^= x3
-			x15 = (x15 << 16) | (x15 >> 16)
+			x15 = bits.RotateLeft32(x15, 16)
 			x11 += x15
 			x7 ^= x11
-			x7 = (x7 << 12) | (x7 >> 20)
+			x7 = bits.RotateLeft32(x7, 12)
 			x3 += x7
 			x15 ^= x3
-			x15 = (x15 << 8) | (x15 >> 24)
+			x15 = bits.RotateLeft32(x15, 8)
 			x11 += x15
 			x7 ^= x11
-			x7 = (x7 << 7) | (x7 >> 25)
+			x7 = bits.RotateLeft32(x7, 7)
 
 			// quarterround(x, 0, 5, 10, 15)
 			x0 += x5
 			x15 ^= x0
-			x15 = (x15 << 16) | (x15 >> 16)
+			x15 = bits.RotateLeft32(x15, 16)
 			x10 += x15
 			x5 ^= x10
-			x5 = (x5 << 12) | (x5 >> 20)
+			x5 = bits.RotateLeft32(x5, 12)
 			x0 += x5
 			x15 ^= x0
-			x15 = (x15 << 8) | (x15 >> 24)
+			x15 = bits.RotateLeft32(x15, 8)
 			x10 += x15
 			x5 ^= x10
-			x5 = (x5 << 7) | (x5 >> 25)
+			x5 = bits.RotateLeft32(x5, 7)
 
 			// quarterround(x, 1, 6, 11, 12)
 			x1 += x6
 			x12 ^= x1
-			x12 = (x12 << 16) | (x12 >> 16)
+			x12 = bits.RotateLeft32(x12, 16)
 			x11 += x12
 			x6 ^= x11
-			x6 = (x6 << 12) | (x6 >> 20)
+			x6 = bits.RotateLeft32(x6, 12)
 			x1 += x6
 			x12 ^= x1
-			x12 = (x12 << 8) | (x12 >> 24)
+			x12 = bits.RotateLeft32(x12, 8)
 			x11 += x12
 			x6 ^= x11
-			x6 = (x6 << 7) | (x6 >> 25)
+			x6 = bits.RotateLeft32(x6, 7)
 
 			// quarterround(x, 2, 7, 8, 13)
 			x2 += x7
 			x13 ^= x2
-			x13 = (x13 << 16) | (x13 >> 16)
+			x13 = bits.RotateLeft32(x13, 16)
 			x8 += x13
 			x7 ^= x8
-			x7 = (x7 << 12) | (x7 >> 20)
+			x7 = bits.RotateLeft32(x7, 12)
 			x2 += x7
 			x13 ^= x2
-			x13 = (x13 << 8) | (x13 >> 24)
+			x13 = bits.RotateLeft32(x13, 8)
 			x8 += x13
 			x7 ^= x8
-			x7 = (x7 << 7) | (x7 >> 25)
+			x7 = bits.RotateLeft32(x7, 7)
 
 			// quarterround(x, 3, 4, 9, 14)
 			x3 += x4
 			x14 ^= x3
-			x14 = (x14 << 16) | (x14 >> 16)
+			x14 = bits.RotateLeft32(x14, 16)
 			x9 += x14
 			x4 ^= x9
-			x4 = (x4 << 12) | (x4 >> 20)
+			x4 = bits.RotateLeft32(x4, 12)
 			x3 += x4
 			x14 ^= x3
-			x14 = (x14 << 8) | (x14 >> 24)
+			x14 = bits.RotateLeft32(x14, 8)
 			x9 += x14
 			x4 ^= x9
-			x4 = (x4 << 7) | (x4 >> 25)
+			x4 = bits.RotateLeft32(x4, 7)
 		}
 
 		// On amd64 at least, this is a rather big boost.
@@ -258,114 +259,114 @@ func hChaChaRef(x *[stateSize]uint32, out *[32]byte) {
 		// quarterround(x, 0, 4, 8, 12)
 		x0 += x4
 		x12 ^= x0
-		x12 = (x12 << 16) | (x12 >> 16)
+		x12 = bits.RotateLeft32(x12, 16)
 		x8 += x12
 		x4 ^= x8
-		x4 = (x4 << 12) | (x4 >> 20)
+		x4 = bits.RotateLeft32(x4, 12)
 		x0 += x4
 		x12 ^= x0
-		x12 = (x12 << 8) | (x12 >> 24)
+		x12 = bits.RotateLeft32(x12, 8)
 		x8 += x12
 		x4 ^= x8
-		x4 = (x4 << 7) | (x4 >> 25)
+		x4 = bits.RotateLeft32(x4, 7)
 
 		// quarterround(x, 1, 5, 9, 13)
 		x1 += x5
 		x13 ^= x1
-		x13 = (x13 << 16) | (x13 >> 16)
+		x13 = bits.RotateLeft32(x13, 16)
 		x9 += x13
 		x5 ^= x9
-		x5 = (x5 << 12) | (x5 >> 20)
+		x5 = bits.RotateLeft32(x5, 12)
 		x1 += x5
 		x13 ^= x1
-		x13 = (x13 << 8) | (x13 >> 24)
+		x13 = bits.RotateLeft32(x13, 8)
 		x9 += x13
 		x5 ^= x9
-		x5 = (x5 << 7) | (x5 >> 25)
+		x5 = bits.RotateLeft32(x5, 7)
 
 		// quarterround(x, 2, 6, 10, 14)
 		x2 += x6
 		x14 ^= x2
-		x14 = (x14 << 16) | (x14 >> 16)
+		x14 = bits.RotateLeft32(x14, 16)
 		x10 += x14
 		x6 ^= x10
-		x6 = (x6 << 12) | (x6 >> 20)
+		x6 = bits.RotateLeft32(x6, 12)
 		x2 += x6
 		x14 ^= x2
-		x14 = (x14 << 8) | (x14 >> 24)
+		x14 = bits.RotateLeft32(x14, 8)
 		x10 += x14
 		x6 ^= x10
-		x6 = (x6 << 7) | (x6 >> 25)
+		x6 = bits.RotateLeft32(x6, 7)
 
 		// quarterround(x, 3, 7, 11, 15)
 		x3 += x7
 		x15 ^= x3
-		x15 = (x15 << 16) | (x15 >> 16)
+		x15 = bits.RotateLeft32(x15, 16)
 		x11 += x15
 		x7 ^= x11
-		x7 = (x7 << 12) | (x7 >> 20)
+		x7 = bits.RotateLeft32(x7, 12)
 		x3 += x7
 		x15 ^= x3
-		x15 = (x15 << 8) | (x15 >> 24)
+		x15 = bits.RotateLeft32(x15, 8)
 		x11 += x15
 		x7 ^= x11
-		x7 = (x7 << 7) | (x7 >> 25)
+		x7 = bits.RotateLeft32(x7, 7)
 
 		// quarterround(x, 0, 5, 10, 15)
 		x0 += x5
 		x15 ^= x0
-		x15 = (x15 << 16) | (x15 >> 16)
+		x15 = bits.RotateLeft32(x15, 16)
 		x10 += x15
 		x5 ^= x10
-		x5 = (x5 << 12) | (x5 >> 20)
+		x5 = bits.RotateLeft32(x5, 12)
 		x0 += x5
 		x15 ^= x0
-		x15 = (x15 << 8) | (x15 >> 24)
+		x15 = bits.RotateLeft32(x15, 8)
 		x10 += x15
 		x5 ^= x10
-		x5 = (x5 << 7) | (x5 >> 25)
+		x5 = bits.RotateLeft32(x5, 7)
 
 		// quarterround(x, 1, 6, 11, 12)
 		x1 += x6
 		x12 ^= x1
-		x12 = (x12 << 16) | (x12 >> 16)
+		x12 = bits.RotateLeft32(x12, 16)
 		x11 += x12
 		x6 ^= x11
-		x6 = (x6 << 12) | (x6 >> 20)
+		x6 = bits.RotateLeft32(x6, 12)
 		x1 += x6
 		x12 ^= x1
-		x12 = (x12 << 8) | (x12 >> 24)
+		x12 = bits.RotateLeft32(x12, 8)
 		x11 += x12
 		x6 ^= x11
-		x6 = (x6 << 7) | (x6 >> 25)
+		x6 = bits.RotateLeft32(x6, 7)
 
 		// quarterround(x, 2, 7, 8, 13)
 		x2 += x7
 		x13 ^= x2
-		x13 = (x13 << 16) | (x13 >> 16)
+		x13 = bits.RotateLeft32(x13, 16)
 		x8 += x13
 		x7 ^= x8
-		x7 = (x7 << 12) | (x7 >> 20)
+		x7 = bits.RotateLeft32(x7, 12)
 		x2 += x7
 		x13 ^= x2
-		x13 = (x13 << 8) | (x13 >> 24)
+		x13 = bits.RotateLeft32(x13, 8)
 		x8 += x13
 		x7 ^= x8
-		x7 = (x7 << 7) | (x7 >> 25)
+		x7 = bits.RotateLeft32(x7, 7)
 
 		// quarterround(x, 3, 4, 9, 14)
 		x3 += x4
 		x14 ^= x3
-		x14 = (x14 << 16) | (x14 >> 16)
+		x14 = bits.RotateLeft32(x14, 16)
 		x9 += x14
 		x4 ^= x9
-		x4 = (x4 << 12) | (x4 >> 20)
+		x4 = bits.RotateLeft32(x4, 12)
 		x3 += x4
 		x14 ^= x3
-		x14 = (x14 << 8) | (x14 >> 24)
+		x14 = bits.RotateLeft32(x14, 8)
 		x9 += x14
 		x4 ^= x9
-		x4 = (x4 << 7) | (x4 >> 25)
+		x4 = bits.RotateLeft32(x4, 7)
 	}
 
 	// HChaCha returns x0...x3 | x12...x15, which corresponds to the
