@@ -1,18 +1,30 @@
-// chacha20.go - A ChaCha stream cipher implementation.
+// Copryright (C) 2019 Yawning Angel
 //
-// To the extent possible under law, Yawning Angel has waived all copyright
-// and related or neighboring rights to chacha20, using the Creative
-// Commons "CC0" public domain dedication. See LICENSE or
-// <http://creativecommons.org/publicdomain/zero/1.0/> for full details.
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package chacha20
+// Package chacha20 implements the ChaCha20 stream cipher.
+package chacha20 // import "gitlab.com/yawning/chacha20.git"
 
 import (
 	"crypto/cipher"
 	"encoding/binary"
 	"errors"
 	"math"
-	"runtime"
+
+	"gitlab.com/yawning/chacha20.git/internal/api"
+	"gitlab.com/yawning/chacha20.git/internal/hardware"
+	"gitlab.com/yawning/chacha20.git/internal/ref"
 )
 
 const (
@@ -30,41 +42,29 @@ const (
 
 	// HNonceSize is the HChaCha20 nonce size in bytes.
 	HNonceSize = 16
-
-	// BlockSize is the ChaCha20 block size in bytes.
-	BlockSize = 64
-
-	stateSize    = 16
-	chachaRounds = 20
-
-	// The constant "expand 32-byte k" as little endian uint32s.
-	sigma0 = uint32(0x61707865)
-	sigma1 = uint32(0x3320646e)
-	sigma2 = uint32(0x79622d32)
-	sigma3 = uint32(0x6b206574)
 )
 
 var (
 	// ErrInvalidKey is the error returned when the key is invalid.
-	ErrInvalidKey = errors.New("key length must be KeySize bytes")
+	ErrInvalidKey = errors.New("chacha20: key length must be KeySize bytes")
 
 	// ErrInvalidNonce is the error returned when the nonce is invalid.
-	ErrInvalidNonce = errors.New("nonce length must be NonceSize/INonceSize/XNonceSize bytes")
+	ErrInvalidNonce = errors.New("chacha20: nonce length must be NonceSize/INonceSize/XNonceSize bytes")
 
 	// ErrInvalidCounter is the error returned when the counter is invalid.
-	ErrInvalidCounter = errors.New("block counter is invalid (out of range)")
+	ErrInvalidCounter = errors.New("chacha20: block counter is invalid (out of range)")
 
-	useUnsafe    = false
-	usingVectors = false
-	blocksFn     = blocksRef
+	supportedImpls []api.Implementation
+	activeImpl     api.Implementation
+
+	_ cipher.Stream = (*Cipher)(nil)
 )
 
-// A Cipher is an instance of ChaCha20/XChaCha20 using a particular key and
-// nonce.
+// Cipher is an instance of ChaCha20/XChaCha20 using a particular key and nonce.
 type Cipher struct {
-	state [stateSize]uint32
+	state [api.StateSize]uint32
+	buf   [api.BlockSize]byte
 
-	buf  [BlockSize]byte
 	off  int
 	ietf bool
 }
@@ -80,6 +80,103 @@ func (c *Cipher) Reset() {
 	}
 }
 
+// Seek sets the block counter to a given offset.
+func (c *Cipher) Seek(blockCounter uint64) error {
+	if c.ietf {
+		if blockCounter > math.MaxUint32 {
+			return ErrInvalidCounter
+		}
+		c.state[12] = uint32(blockCounter)
+	} else {
+		c.state[12] = uint32(blockCounter)
+		c.state[13] = uint32(blockCounter >> 32)
+	}
+	c.off = api.BlockSize
+	return nil
+}
+
+// ReKey reinitializes the ChaCha20/XChaCha20 instance with the provided key
+// and nonce.
+func (c *Cipher) ReKey(key, nonce []byte) error {
+	c.Reset()
+	return c.doReKey(key, nonce)
+}
+
+func (c *Cipher) doReKey(key, nonce []byte) error {
+	if len(key) != KeySize {
+		return ErrInvalidKey
+	}
+
+	var (
+		subKey      [KeySize]byte
+		purgeSubKey bool
+	)
+
+	switch len(nonce) {
+	case NonceSize, INonceSize:
+	case XNonceSize:
+		HChaCha(key, nonce[0:16], &subKey)
+		key = subKey[:]
+		nonce = nonce[16:24]
+		purgeSubKey = true
+	default:
+		return ErrInvalidNonce
+	}
+
+	_ = key[31] // Force bounds check elimination.
+
+	c.state[0] = api.Sigma0
+	c.state[1] = api.Sigma1
+	c.state[2] = api.Sigma2
+	c.state[3] = api.Sigma3
+	c.state[4] = binary.LittleEndian.Uint32(key[0:4])
+	c.state[5] = binary.LittleEndian.Uint32(key[4:8])
+	c.state[6] = binary.LittleEndian.Uint32(key[8:12])
+	c.state[7] = binary.LittleEndian.Uint32(key[12:16])
+	c.state[8] = binary.LittleEndian.Uint32(key[16:20])
+	c.state[9] = binary.LittleEndian.Uint32(key[20:24])
+	c.state[10] = binary.LittleEndian.Uint32(key[24:28])
+	c.state[11] = binary.LittleEndian.Uint32(key[28:32])
+	c.state[12] = 0
+	if len(nonce) == INonceSize {
+		_ = nonce[11] // Force bounds check elimination.
+		c.state[13] = binary.LittleEndian.Uint32(nonce[0:4])
+		c.state[14] = binary.LittleEndian.Uint32(nonce[4:8])
+		c.state[15] = binary.LittleEndian.Uint32(nonce[8:12])
+		c.ietf = true
+	} else {
+		_ = nonce[7] // Force bounds check elimination.
+		c.state[13] = 0
+		c.state[14] = binary.LittleEndian.Uint32(nonce[0:4])
+		c.state[15] = binary.LittleEndian.Uint32(nonce[4:8])
+		c.ietf = false
+	}
+	c.off = api.BlockSize
+
+	if purgeSubKey {
+		for i := range subKey {
+			subKey[i] = 0
+		}
+	}
+
+	return nil
+}
+
+// New returns a new ChaCha20/XChaCha20 instance.
+func New(key, nonce []byte) (*Cipher, error) {
+	var c Cipher
+	if err := c.doReKey(key, nonce); err != nil {
+		return nil, err
+	}
+
+	return &c, nil
+}
+
+// HChaCha is the HChaCha20 hash function used to make XChaCha.
+func HChaCha(key, nonce []byte, dst *[32]byte) {
+	activeImpl.HChaCha(key, nonce, dst)
+}
+
 // XORKeyStream sets dst to the result of XORing src with the key stream.  Dst
 // and src may be the same slice but otherwise should not overlap.
 func (c *Cipher) XORKeyStream(dst, src []byte) {
@@ -89,11 +186,11 @@ func (c *Cipher) XORKeyStream(dst, src []byte) {
 
 	for remaining := len(src); remaining > 0; {
 		// Process multiple blocks at once.
-		if c.off == BlockSize {
-			nrBlocks := remaining / BlockSize
-			directBytes := nrBlocks * BlockSize
+		if c.off == api.BlockSize {
+			nrBlocks := remaining / api.BlockSize
+			directBytes := nrBlocks * api.BlockSize
 			if nrBlocks > 0 {
-				blocksFn(&c.state, src, dst, nrBlocks, c.ietf)
+				c.doBlocks(dst, src, nrBlocks)
 				remaining -= directBytes
 				if remaining == 0 {
 					return
@@ -104,37 +201,54 @@ func (c *Cipher) XORKeyStream(dst, src []byte) {
 
 			// If there's a partial block, generate 1 block of keystream into
 			// the internal buffer.
-			blocksFn(&c.state, nil, c.buf[:], 1, c.ietf)
+			c.doBlocks(c.buf[:], nil, 1)
 			c.off = 0
 		}
 
 		// Process partial blocks from the buffered keystream.
-		toXor := BlockSize - c.off
+		toXor := api.BlockSize - c.off
 		if remaining < toXor {
 			toXor = remaining
 		}
 		if toXor > 0 {
-			for i, v := range src[:toXor] {
-				dst[i] = v ^ c.buf[c.off+i]
-			}
+			// The inliner doesn't want to inline this function, but my
+			// attempts to force BCE don't seem to work with manual
+			// inlining.
+			//
+			// Taking the extra function call overhead here appears to be
+			// worth it.
+			c.xorBufBytes(dst, src, toXor)
+
 			dst = dst[toXor:]
 			src = src[toXor:]
 
 			remaining -= toXor
-			c.off += toXor
 		}
 	}
+}
+
+func (c *Cipher) xorBufBytes(dst, src []byte, n int) {
+	// Force bounds check elimination.
+	buf := c.buf[c.off:]
+	_ = buf[n-1]
+	_ = dst[n-1]
+	_ = src[n-1]
+
+	for i := 0; i < n; i++ {
+		dst[i] = buf[i] ^ src[i]
+	}
+	c.off += n
 }
 
 // KeyStream sets dst to the raw keystream.
 func (c *Cipher) KeyStream(dst []byte) {
 	for remaining := len(dst); remaining > 0; {
 		// Process multiple blocks at once.
-		if c.off == BlockSize {
-			nrBlocks := remaining / BlockSize
-			directBytes := nrBlocks * BlockSize
+		if c.off == api.BlockSize {
+			nrBlocks := remaining / api.BlockSize
+			directBytes := nrBlocks * api.BlockSize
 			if nrBlocks > 0 {
-				blocksFn(&c.state, nil, dst, nrBlocks, c.ietf)
+				c.doBlocks(dst, nil, nrBlocks)
 				remaining -= directBytes
 				if remaining == 0 {
 					return
@@ -144,12 +258,12 @@ func (c *Cipher) KeyStream(dst []byte) {
 
 			// If there's a partial block, generate 1 block of keystream into
 			// the internal buffer.
-			blocksFn(&c.state, nil, c.buf[:], 1, c.ietf)
+			c.doBlocks(c.buf[:], nil, 1)
 			c.off = 0
 		}
 
 		// Process partial blocks from the buffered keystream.
-		toCopy := BlockSize - c.off
+		toCopy := api.BlockSize - c.off
 		if remaining < toCopy {
 			toCopy = remaining
 		}
@@ -162,112 +276,19 @@ func (c *Cipher) KeyStream(dst []byte) {
 	}
 }
 
-// ReKey reinitializes the ChaCha20/XChaCha20 instance with the provided key
-// and nonce.
-func (c *Cipher) ReKey(key, nonce []byte) error {
-	if len(key) != KeySize {
-		return ErrInvalidKey
-	}
-
-	switch len(nonce) {
-	case NonceSize:
-	case INonceSize:
-	case XNonceSize:
-		var subkey [KeySize]byte
-		var subnonce [HNonceSize]byte
-		copy(subnonce[:], nonce[0:16])
-		HChaCha(key, &subnonce, &subkey)
-		key = subkey[:]
-		nonce = nonce[16:24]
-		defer func() {
-			for i := range subkey {
-				subkey[i] = 0
-			}
-		}()
-	default:
-		return ErrInvalidNonce
-	}
-
-	c.Reset()
-	c.state[0] = sigma0
-	c.state[1] = sigma1
-	c.state[2] = sigma2
-	c.state[3] = sigma3
-	c.state[4] = binary.LittleEndian.Uint32(key[0:4])
-	c.state[5] = binary.LittleEndian.Uint32(key[4:8])
-	c.state[6] = binary.LittleEndian.Uint32(key[8:12])
-	c.state[7] = binary.LittleEndian.Uint32(key[12:16])
-	c.state[8] = binary.LittleEndian.Uint32(key[16:20])
-	c.state[9] = binary.LittleEndian.Uint32(key[20:24])
-	c.state[10] = binary.LittleEndian.Uint32(key[24:28])
-	c.state[11] = binary.LittleEndian.Uint32(key[28:32])
-	c.state[12] = 0
-	if len(nonce) == INonceSize {
-		c.state[13] = binary.LittleEndian.Uint32(nonce[0:4])
-		c.state[14] = binary.LittleEndian.Uint32(nonce[4:8])
-		c.state[15] = binary.LittleEndian.Uint32(nonce[8:12])
-		c.ietf = true
-	} else {
-		c.state[13] = 0
-		c.state[14] = binary.LittleEndian.Uint32(nonce[0:4])
-		c.state[15] = binary.LittleEndian.Uint32(nonce[4:8])
-		c.ietf = false
-	}
-	c.off = BlockSize
-	return nil
-
-}
-
-// Seek sets the block counter to a given offset.
-func (c *Cipher) Seek(blockCounter uint64) error {
+func (c *Cipher) doBlocks(dst, src []byte, nrBlocks int) {
 	if c.ietf {
-		if blockCounter > math.MaxUint32 {
-			return ErrInvalidCounter
+		ctr := uint64(c.state[12])
+		if ctr+uint64(nrBlocks) > math.MaxUint32 {
+			panic("chacha20: will exceed key stream per nonce limit")
 		}
-		c.state[12] = uint32(blockCounter)
-	} else {
-		c.state[12] = uint32(blockCounter)
-		c.state[13] = uint32(blockCounter >> 32)
 	}
-	c.off = BlockSize
-	return nil
-}
 
-// NewCipher returns a new ChaCha20/XChaCha20 instance.
-func NewCipher(key, nonce []byte) (*Cipher, error) {
-	c := new(Cipher)
-	if err := c.ReKey(key, nonce); err != nil {
-		return nil, err
-	}
-	return c, nil
-}
-
-// HChaCha is the HChaCha20 hash function used to make XChaCha.
-func HChaCha(key []byte, nonce *[HNonceSize]byte, out *[32]byte) {
-	var x [stateSize]uint32 // Last 4 slots unused, sigma hardcoded.
-	x[0] = binary.LittleEndian.Uint32(key[0:4])
-	x[1] = binary.LittleEndian.Uint32(key[4:8])
-	x[2] = binary.LittleEndian.Uint32(key[8:12])
-	x[3] = binary.LittleEndian.Uint32(key[12:16])
-	x[4] = binary.LittleEndian.Uint32(key[16:20])
-	x[5] = binary.LittleEndian.Uint32(key[20:24])
-	x[6] = binary.LittleEndian.Uint32(key[24:28])
-	x[7] = binary.LittleEndian.Uint32(key[28:32])
-	x[8] = binary.LittleEndian.Uint32(nonce[0:4])
-	x[9] = binary.LittleEndian.Uint32(nonce[4:8])
-	x[10] = binary.LittleEndian.Uint32(nonce[8:12])
-	x[11] = binary.LittleEndian.Uint32(nonce[12:16])
-	hChaChaRef(&x, out)
+	activeImpl.Blocks(&c.state, dst, src, nrBlocks)
 }
 
 func init() {
-	switch runtime.GOARCH {
-	case "386", "amd64":
-		// Abuse unsafe to skip calling binary.LittleEndian.PutUint32
-		// in the critical path.  This is a big boost on systems that are
-		// little endian and not overly picky about alignment.
-		useUnsafe = true
-	}
+	supportedImpls = hardware.Register(supportedImpls)
+	supportedImpls = ref.Register(supportedImpls)
+	activeImpl = supportedImpls[0]
 }
-
-var _ cipher.Stream = (*Cipher)(nil)
