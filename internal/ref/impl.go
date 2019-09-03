@@ -219,7 +219,7 @@ func (impl *implRef) Blocks(x *[api.StateSize]uint32, dst, src []byte, nrBlocks 
 	}
 }
 
-func (impl *implRef) HChaCha(key, nonce []byte, dst *[32]byte) {
+func (impl *implRef) HChaCha(key, nonce []byte, dst []byte) {
 	// Force bounds check elimination.
 	_ = key[31]
 	_ = nonce[api.HNonceSize-1]
@@ -356,6 +356,7 @@ func (impl *implRef) HChaCha(key, nonce []byte, dst *[32]byte) {
 
 	// HChaCha returns x0...x3 | x12...x15, which corresponds to the
 	// indexes of the ChaCha constant and the indexes of the IV.
+	_ = dst[api.HashSize-1] // Force bounds check elimination.
 	binary.LittleEndian.PutUint32(dst[0:4], x0)
 	binary.LittleEndian.PutUint32(dst[4:8], x1)
 	binary.LittleEndian.PutUint32(dst[8:12], x2)

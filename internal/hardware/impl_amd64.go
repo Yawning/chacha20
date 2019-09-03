@@ -27,19 +27,19 @@ import (
 func blocksAVX2(s *[api.StateSize]uint32, in, out []byte)
 
 //go:noescape
-func hChaChaAVX2(key, nonce []byte, dst *[32]byte)
+func hChaChaAVX2(key, nonce []byte, dst *byte)
 
 //go:noescape
 func blocksSSSE3(s *[api.StateSize]uint32, in, out []byte)
 
 //go:noescape
-func hChaChaSSSE3(key, nonce []byte, dst *[32]byte)
+func hChaChaSSSE3(key, nonce []byte, dst *byte)
 
 type implAmd64 struct {
 	name string
 
 	blocksFn  func(*[api.StateSize]uint32, []byte, []byte, int)
-	hChaChaFn func([]byte, []byte, *[32]byte)
+	hChaChaFn func([]byte, []byte, *byte)
 }
 
 func (impl *implAmd64) Name() string {
@@ -50,8 +50,8 @@ func (impl *implAmd64) Blocks(x *[api.StateSize]uint32, dst, src []byte, nrBlock
 	impl.blocksFn(x, dst, src, nrBlocks)
 }
 
-func (impl *implAmd64) HChaCha(key, nonce []byte, dst *[32]byte) {
-	impl.hChaChaFn(key, nonce, dst)
+func (impl *implAmd64) HChaCha(key, nonce []byte, dst []byte) {
+	impl.hChaChaFn(key, nonce, &dst[0])
 }
 
 func blockWrapper(fn func(*[api.StateSize]uint32, []byte, []byte)) func(*[api.StateSize]uint32, []byte, []byte, int) {

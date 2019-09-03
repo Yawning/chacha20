@@ -53,5 +53,7 @@ type Implementation interface {
 	Blocks(x *[StateSize]uint32, dst, src []byte, nrBlocks int)
 
 	// HChaCha calculates the HChaCha20 hash.
-	HChaCha(key, nonce []byte, dst *[32]byte)
+	//
+	// Note: `dst` is guaranteed to be HashSize bytes.
+	HChaCha(key, nonce []byte, dst []byte)
 }

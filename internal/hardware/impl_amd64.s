@@ -957,7 +957,7 @@ chacha_blocks_avx2_done:
 	VZEROUPPER
 	RET
 
-// func hChaChaAVX2(key, nonce []byte, dst *[32]byte)
+// func hChaChaAVX2(key, nonce []byte, dst *byte)
 TEXT ·hChaChaAVX2(SB), NOSPLIT|NOFRAME, $0-56
 	MOVQ key+0(FP), DI
 	MOVQ nonce+24(FP), SI
@@ -1613,7 +1613,7 @@ chacha_blocks_ssse3_done:
 
 	RET
 
-// func hChaChaSSSE3(key, nonce []byte, dst *[32]byte)
+// func hChaChaSSSE3(key, nonce []byte, dst *byte)
 TEXT ·hChaChaSSSE3(SB), NOSPLIT|NOFRAME, $0-56
 	MOVQ key+0(FP), DI
 	MOVQ nonce+24(FP), SI

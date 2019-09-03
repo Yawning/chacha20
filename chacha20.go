@@ -107,18 +107,14 @@ func (c *Cipher) doReKey(key, nonce []byte) error {
 		return ErrInvalidKey
 	}
 
-	var (
-		subKey      [KeySize]byte
-		purgeSubKey bool
-	)
-
+	var subKey []byte
 	switch len(nonce) {
 	case NonceSize, INonceSize:
 	case XNonceSize:
-		HChaCha(key, nonce[0:16], &subKey)
-		key = subKey[:]
+		subKey = c.buf[:KeySize]
+		activeImpl.HChaCha(key, nonce, subKey)
+		key = subKey
 		nonce = nonce[16:24]
-		purgeSubKey = true
 	default:
 		return ErrInvalidNonce
 	}
@@ -153,7 +149,7 @@ func (c *Cipher) doReKey(key, nonce []byte) error {
 	}
 	c.off = api.BlockSize
 
-	if purgeSubKey {
+	if subKey != nil {
 		for i := range subKey {
 			subKey[i] = 0
 		}
@@ -174,7 +170,7 @@ func New(key, nonce []byte) (*Cipher, error) {
 
 // HChaCha is the HChaCha20 hash function used to make XChaCha.
 func HChaCha(key, nonce []byte, dst *[32]byte) {
-	activeImpl.HChaCha(key, nonce, dst)
+	activeImpl.HChaCha(key, nonce, dst[:])
 }
 
 // XORKeyStream sets dst to the result of XORing src with the key stream.  Dst
