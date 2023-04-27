@@ -78,7 +78,7 @@ func init() {
 			hChaChaFn: hChaChaAVX2,
 		})
 	}
-	if cpu.X86.HasSSE3 {
+	if cpu.X86.HasSSSE3 {
 		hardwareImpls = append(hardwareImpls, &implAmd64{
 			name:      "amd64_ssse3",
 			blocksFn:  blockWrapper(blocksSSSE3),
