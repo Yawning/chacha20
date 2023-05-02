@@ -1,4 +1,4 @@
-module gitlab.com/yawning/chacha20
+module gitlab.com/yawning/chacha20.git
 
 go 1.18.1
 
