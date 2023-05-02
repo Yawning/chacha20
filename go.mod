@@ -1,6 +1,6 @@
 module gitlab.com/yawning/chacha20
 
-go 1.12
+go 1.18.1
 
 require (
 	github.com/stretchr/testify v1.4.0
